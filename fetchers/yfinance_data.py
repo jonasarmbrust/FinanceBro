@@ -192,15 +192,19 @@ async def quick_price_update(tickers: list[str]) -> tuple[dict[str, float], dict
 
         for chunk in chunks:
             try:
+                import sys
+                print(f"[YF-BATCH] Downloading chunk: {chunk}", flush=True, file=sys.stderr)
                 # Schritt 1: Tageskerzen für Vortagsschluss
                 daily_data = yf.download(
                     chunk,
                     period="5d",
                     interval="1d",
                     progress=False,
-                    threads=True,
+                    threads=False,  # threads=True kann auf Cloud Run hängen
                 )
+                print(f"[YF-BATCH] daily_data shape: {daily_data.shape if daily_data is not None else 'None'}, empty: {daily_data.empty if daily_data is not None else 'N/A'}", flush=True, file=sys.stderr)
                 if daily_data is not None and not daily_data.empty:
+                    print(f"[YF-BATCH] daily_data columns: {list(daily_data.columns)[:10]}", flush=True, file=sys.stderr)
                     for ticker in chunk:
                         try:
                             if len(chunk) == 1:
@@ -217,8 +221,8 @@ async def quick_price_update(tickers: list[str]) -> tuple[dict[str, float], dict
                                     prev = float(col.iloc[-2])
                                     if prev > 0 and not math.isnan(prev):
                                         prev_closes[ticker] = prev
-                        except (KeyError, IndexError, TypeError):
-                            pass
+                        except (KeyError, IndexError, TypeError) as e:
+                            print(f"[YF-BATCH] ticker {ticker} parse error: {e}", flush=True, file=sys.stderr)
 
                 # Schritt 2: Intraday + Pre-Market für aktuellsten Kurs
                 try:
@@ -228,7 +232,7 @@ async def quick_price_update(tickers: list[str]) -> tuple[dict[str, float], dict
                         interval="15m",
                         prepost=True,
                         progress=False,
-                        threads=True,
+                        threads=False,
                     )
                     if intraday is not None and not intraday.empty:
                         for ticker in chunk:
@@ -247,6 +251,7 @@ async def quick_price_update(tickers: list[str]) -> tuple[dict[str, float], dict
                     logger.debug(f"yfinance Intraday fehlgeschlagen für Batch {chunk}: {e}")
 
             except Exception as e:
+                print(f"[YF-BATCH] EXCEPTION for chunk {chunk}: {type(e).__name__}: {e}", flush=True, file=sys.stderr)
                 logger.debug(f"yfinance Batch fehlgeschlagen für {chunk}: {e}")
                 continue
 
