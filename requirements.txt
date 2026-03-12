@@ -7,6 +7,7 @@ python-dotenv==1.0.1
 pandas==2.2.3
 jinja2==3.1.5
 pydantic==2.10.4
+pydantic-settings>=2.0
 
 # Finanzdaten
 yfinance==0.2.48
@@ -14,6 +15,9 @@ websockets==14.1
 
 # Scheduling
 apscheduler==3.10.4
+
+# Logging
+structlog>=24.0
 
 # AI (Gemini Research, optional)
 google-genai>=1.0.0

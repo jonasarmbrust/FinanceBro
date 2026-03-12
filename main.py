@@ -15,6 +15,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from config import settings
 from cache_manager import CacheManager
 from state import portfolio_data
+from logging_config import setup_logging
 
 from services.refresh import _refresh_data, _quick_price_refresh, _update_parqet
 from routes.portfolio import router as portfolio_router
@@ -25,13 +26,9 @@ from routes.analytics import router as analytics_router
 from routes.telegram import router as telegram_router
 from routes.parqet_oauth import router as parqet_oauth_router
 
+# Structured Logging (JSON in production, colored console in dev)
+setup_logging(settings.ENVIRONMENT)
 logger = logging.getLogger(__name__)
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
 
 
 @asynccontextmanager
@@ -46,6 +43,13 @@ async def lifespan(app: FastAPI):
     # Volatile Caches beim Start löschen (FMP, Stocknear, yFinance, etc.)
     # Parqet-Positionen und Wechselkurse bleiben erhalten
     CacheManager.clear_volatile_caches()
+
+    # JSON → SQLite Migration (einmalig, idempotent)
+    try:
+        from database import migrate_json_to_sqlite
+        migrate_json_to_sqlite()
+    except Exception as e:
+        logger.debug(f"JSON-Migration übersprungen: {e}")
 
     # Fast startup: Parqet API + yFinance prices only (no heavy FMP/Stocknear/AV)
     asyncio.create_task(_update_parqet())

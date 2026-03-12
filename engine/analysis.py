@@ -6,12 +6,11 @@ und Trend-Erkennung. Unterstützt 3 Analyse-Level:
   - mid:   Nur Price Target, Fear&Greed, yFinance (FMP-Fundamentals aus Cache)
   - light: Nur Preis-Update und Score-Neuberechnung mit gecachten Daten
 """
-import json
 import logging
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
+import database as db
 from config import settings
 from models import (
     AnalysisReport,
@@ -21,9 +20,6 @@ from models import (
 )
 
 logger = logging.getLogger(__name__)
-
-HISTORY_FILE = settings.CACHE_DIR / "score_history.json"
-MAX_HISTORY_ENTRIES = 90  # Max 30 Tage × 3 Analysen/Tag
 
 
 def build_analysis_report(
@@ -148,103 +144,42 @@ def build_analysis_report(
 
 
 def save_analysis(report: AnalysisReport):
-    """Speichert einen Analyse-Report in der Score-Historie."""
+    """Speichert einen Analyse-Report in SQLite."""
     try:
-        history = _load_history()
-
-        # Kompaktes Format für Speicherung
-        entry = {
-            "timestamp": report.timestamp.isoformat(),
-            "level": report.analysis_level,
-            "portfolio_score": report.portfolio_score,
-            "portfolio_rating": report.portfolio_rating.value,
-            "num_positions": report.num_positions,
-            "avg_confidence": report.avg_confidence,
-            "scores": {
-                p.ticker: {
-                    "score": p.score,
-                    "rating": p.rating.value,
-                    "confidence": p.confidence,
-                }
-                for p in report.positions
-            },
+        scores = {
+            p.ticker: {
+                "score": p.score,
+                "rating": p.rating.value,
+                "confidence": p.confidence,
+            }
+            for p in report.positions
         }
-
-        history.append(entry)
-
-        # Begrenze auf MAX_HISTORY_ENTRIES
-        if len(history) > MAX_HISTORY_ENTRIES:
-            history = history[-MAX_HISTORY_ENTRIES:]
-
-        HISTORY_FILE.write_text(
-            json.dumps(history, indent=2, default=str),
-            encoding="utf-8",
+        db.save_analysis_report(
+            timestamp=report.timestamp.isoformat(),
+            level=report.analysis_level,
+            portfolio_score=report.portfolio_score,
+            portfolio_rating=report.portfolio_rating.value,
+            num_positions=report.num_positions,
+            avg_confidence=report.avg_confidence,
+            scores=scores,
         )
-        logger.info(f"📊 Analyse-Report gespeichert ({len(history)} Einträge in Historie)")
-
     except Exception as e:
         logger.warning(f"Analyse-Report Speicherung fehlgeschlagen: {e}")
 
 
 def get_analysis_history(days: int = 30) -> list[dict]:
-    """Liest die Analyse-Historie der letzten X Tage."""
-    history = _load_history()
-    if not history:
-        return []
-
-    # Filtere nach Tagen
-    from datetime import timedelta
-    cutoff = datetime.now() - timedelta(days=days)
-
-    return [
-        entry for entry in history
-        if datetime.fromisoformat(entry["timestamp"]).replace(tzinfo=None) > cutoff.replace(tzinfo=None)
-    ]
+    """Liest die Analyse-Historie der letzten X Tage aus SQLite."""
+    return db.get_analysis_history(days=days)
 
 
 def get_score_trend(ticker: str, days: int = 7) -> list[dict]:
     """Gibt Score-Trend für einen einzelnen Ticker zurück."""
-    history = get_analysis_history(days=days)
-    trend = []
-
-    for entry in history:
-        scores = entry.get("scores", {})
-        if ticker in scores:
-            trend.append({
-                "timestamp": entry["timestamp"],
-                "score": scores[ticker]["score"],
-                "rating": scores[ticker]["rating"],
-            })
-
-    return trend
+    return db.get_score_trend(ticker, days=days)
 
 
 def _get_latest_scores() -> dict[str, float]:
     """Holt die Scores aus dem letzten Analyse-Report."""
-    history = _load_history()
-    if not history:
-        return {}
-
-    latest = history[-1]
-    return {
-        ticker: data["score"]
-        for ticker, data in latest.get("scores", {}).items()
-    }
-
-
-def _load_history() -> list[dict]:
-    """Lädt die Score-Historie von Disk."""
-    if not HISTORY_FILE.exists():
-        return []
-
-    try:
-        data = json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
-        if isinstance(data, list):
-            return data
-    except Exception:
-        pass
-
-    return []
+    return db.get_latest_scores()
 
 
 def _build_report_summary(

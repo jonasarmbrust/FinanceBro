@@ -279,7 +279,7 @@ class TestBacktestIntegration:
         from engine.backtest import run_backtest
 
         with patch("engine.backtest.BACKTEST_CACHE_FILE", tmp_path / "bt.json"):
-            with patch("engine.analysis.HISTORY_FILE", tmp_path / "hist.json"):
+            with patch("engine.analysis.db.get_analysis_history", return_value=[]):
                 result = run_backtest(lookback_days=30, forward_days=14)
                 assert "error" in result or "entries" in result
 

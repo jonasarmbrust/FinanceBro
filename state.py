@@ -23,7 +23,16 @@ portfolio_data: dict = {
     "summary": None,
     "last_refresh": None,
     "refreshing": False,
+    "activities": None,  # Cached Parqet activities (list[dict])
+}
+
+# Refresh-Fortschritt (für UI-Feedback)
+refresh_progress: dict = {
+    "step": "",           # Aktueller Schritt (z.B. "Lade FMP-Daten...")
+    "percent": 0,         # 0-100
+    "started_at": None,   # ISO timestamp
 }
 
 # Lock um parallele Refreshes zu verhindern
 refresh_lock = asyncio.Lock()
+

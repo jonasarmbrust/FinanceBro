@@ -473,13 +473,14 @@ async def get_attribution():
     if not summary or not summary.stocks:
         return JSONResponse({"error": "Keine Daten"}, status_code=503)
 
-    # Dividenden-Activities laden (cached, kein extra API-Call)
-    activities = None
-    try:
-        from fetchers.parqet import fetch_portfolio_activities_raw
-        activities = await fetch_portfolio_activities_raw()
-    except Exception:
-        pass
+    # Activities aus State lesen (bereits beim Refresh gecacht)
+    activities = portfolio_data.get("activities")
+    if not activities:
+        try:
+            from fetchers.parqet import fetch_portfolio_activities_raw
+            activities = await fetch_portfolio_activities_raw()
+        except Exception:
+            pass
 
     from engine.attribution import calculate_attribution
     return calculate_attribution(summary.stocks, activities)

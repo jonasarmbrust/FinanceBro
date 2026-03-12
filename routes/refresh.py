@@ -7,13 +7,25 @@ import logging
 
 from fastapi import APIRouter
 
-from state import portfolio_data
+from state import portfolio_data, refresh_progress
 from config import settings
 from services.refresh import _refresh_data, _quick_price_refresh, _update_parqet
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get("/api/refresh/status")
+async def get_refresh_status():
+    """Aktueller Refresh-Status für UI-Polling."""
+    return {
+        "refreshing": portfolio_data["refreshing"],
+        "step": refresh_progress["step"],
+        "percent": refresh_progress["percent"],
+        "started_at": refresh_progress["started_at"],
+        "last_refresh": portfolio_data.get("last_refresh"),
+    }
 
 
 @router.post("/api/refresh")

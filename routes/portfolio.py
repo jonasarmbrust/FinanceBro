@@ -86,10 +86,12 @@ async def get_portfolio_history(days: int = 90):
     """
     # --- 1. Versuche Investment-Timeline aus Parqet Activities ---
     try:
-        from fetchers.parqet import fetch_portfolio_activities_raw
+        # Activities aus State lesen (bereits beim Refresh gecacht)
+        activities = portfolio_data.get("activities")
+        if not activities:
+            from fetchers.parqet import fetch_portfolio_activities_raw
+            activities = await fetch_portfolio_activities_raw()
         from datetime import datetime as dt, timedelta
-
-        activities = await fetch_portfolio_activities_raw()
         if activities and len(activities) > 0:
             # Kumuliertes investiertes Kapital pro Tag berechnen
             daily_invested = {}

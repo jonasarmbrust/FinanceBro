@@ -9,7 +9,7 @@ import asyncio
 import logging
 from datetime import datetime
 
-from state import portfolio_data, refresh_lock, YFINANCE_ALIASES, TZ_BERLIN
+from state import portfolio_data, refresh_lock, refresh_progress, YFINANCE_ALIASES, TZ_BERLIN
 from config import settings
 from cache_manager import CacheManager
 from models import PortfolioSummary, StockFullData, DataSourceStatus
@@ -54,9 +54,17 @@ async def _refresh_data():
         logger.info("Refresh bereits aktiv - überspringe")
 
 
+def _set_progress(step: str, percent: int):
+    """Aktualisiert den Refresh-Fortschritt."""
+    refresh_progress["step"] = step
+    refresh_progress["percent"] = percent
+
+
 async def _do_refresh():
     """Interne Refresh-Logik (aufgerufen innerhalb des Locks)."""
     portfolio_data["refreshing"] = True
+    refresh_progress["started_at"] = datetime.now(tz=TZ_BERLIN).isoformat()
+    _set_progress("Starte Refresh...", 0)
     logger.info("🔄 Starte Daten-Refresh...")
 
     # C4: Error-Aggregation pro Refresh-Zyklus
@@ -75,10 +83,12 @@ async def _do_refresh():
             logger.warning(f"Fear&Greed nicht verfügbar: {e}")
 
         # Wechselkurse zentral laden
+        _set_progress("Lade Wechselkurse...", 5)
         converter = await CurrencyConverter.create()
         eur_usd_rate = converter.rates.eur_usd
 
         # --- 1. Lade Portfolio (bevorzugt aus bestehendem Parqet-Update) ---
+        _set_progress("Lade Portfolio...", 10)
         existing_summary = portfolio_data.get("summary")
         if existing_summary and existing_summary.stocks:
             # Positionen aus dem letzten Parqet-Update wiederverwenden (spart API-Calls)
@@ -103,6 +113,7 @@ async def _do_refresh():
                 is_demo = True
 
         # --- 2. Hole Daten für jede Position ---
+        _set_progress(f"Analysiere {len(positions)} Positionen...", 20)
         stocks = []
         scores_dict = {}
 
@@ -149,6 +160,7 @@ async def _do_refresh():
             scores_dict = {s.position.ticker: s.score for s in stocks if s.score}
 
         # --- 3. Rebalancing ---
+        _set_progress("Berechne Rebalancing...", 60)
         rebalancing = calculate_rebalancing(positions, scores_dict, stocks=stocks)
 
         # --- 4. Tech Picks (nur laden wenn kein Cache vorhanden — spart ~16 FMP-Calls) ---
@@ -172,6 +184,7 @@ async def _do_refresh():
                 tech_picks = get_demo_tech_picks()
 
         # --- 5. Daily Changes + Preisanpassungen ---
+        _set_progress("Lade Tagesänderungen...", 75)
         # Hole Daily Changes per yfinance Batch-Call
         non_cash_tickers = [s.position.ticker for s in stocks if s.position.ticker != "CASH"]
         yf_tickers_map = {t: YFINANCE_ALIASES.get(t, t) for t in non_cash_tickers}
@@ -206,6 +219,7 @@ async def _do_refresh():
             pos.price_currency = "EUR"
 
         # --- 6. Build Summary (alle Werte jetzt in EUR) ---
+        _set_progress("Erstelle Zusammenfassung...", 85)
         total_value = sum(s.position.current_value for s in stocks)
         total_cost = sum(s.position.total_cost for s in stocks)
         total_pnl = total_value - total_cost
@@ -240,6 +254,13 @@ async def _do_refresh():
         portfolio_data["summary"] = summary
         portfolio_data["last_refresh"] = datetime.now(tz=TZ_BERLIN)
 
+        # Activities cachen (für Attribution, Earnings, Portfolio-History)
+        try:
+            from fetchers.parqet import fetch_portfolio_activities_raw
+            portfolio_data["activities"] = await fetch_portfolio_activities_raw()
+        except Exception:
+            pass
+
         # Save daily portfolio snapshot
         try:
             save_snapshot(
@@ -252,6 +273,7 @@ async def _do_refresh():
         except Exception as e:
             logger.warning(f"Snapshot-Speicherung fehlgeschlagen: {e}")
 
+        _set_progress("Erstelle Analyse-Report...", 90)
         logger.info(f"✅ Refresh abgeschlossen: {len(stocks)} Positionen, Wert: €{total_value:,.2f}")
 
         # Analyse-Report generieren
@@ -302,6 +324,7 @@ async def _do_refresh():
         _refresh_errors["other"].append(str(e))
     finally:
         portfolio_data["refreshing"] = False
+        _set_progress("Fertig", 100)
         # C4: Error-Summary loggen
         total_errors = sum(len(v) for v in _refresh_errors.values())
         if total_errors > 0:

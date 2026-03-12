@@ -436,13 +436,14 @@ async def _cmd_attribution(chat_id: str):
         await send_message("⚠️ Keine Portfolio-Daten. Bitte /refresh starten.", chat_id=chat_id)
         return
 
-    # Activities für Dividenden laden
-    activities = None
-    try:
-        from fetchers.parqet import fetch_portfolio_activities_raw
-        activities = await fetch_portfolio_activities_raw()
-    except Exception:
-        pass
+    # Activities aus State lesen (bereits beim Refresh gecacht)
+    activities = portfolio_data.get("activities")
+    if not activities:
+        try:
+            from fetchers.parqet import fetch_portfolio_activities_raw
+            activities = await fetch_portfolio_activities_raw()
+        except Exception:
+            pass
 
     from engine.attribution import calculate_attribution
     attr = calculate_attribution(summary.stocks, activities)
