@@ -32,8 +32,7 @@ async def fetch_technical_indicators(ticker_symbol: str) -> TechnicalIndicators:
         result = await loop.run_in_executor(_executor, _calc_indicators_sync, ticker_symbol)
         if result and (result.rsi_14 is not None or result.sma_50 is not None):
             _cache.set(cache_key, result.model_dump())
-            _cache.flush()
-            return result
+            return result  # flush am Batch-Ende in data_loader
     except Exception as e:
         logger.warning(f"Technical Indicators fehlgeschlagen für {ticker_symbol}: {e}")
 

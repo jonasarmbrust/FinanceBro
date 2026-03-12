@@ -130,6 +130,26 @@ def _build_telegram_report(
             sections.append(f"  🔴 {stock.position.ticker}: {pct:+.1f}%")
         sections.append("")
 
+    # ── P&L Attribution (Sektor-Beitrag) ──
+    try:
+        from engine.attribution import calculate_attribution
+        attr = calculate_attribution(summary.stocks)
+        if attr["sectors"]:
+            sections.append("🏢 *P&L nach Sektor*")
+            for s in attr["sectors"][:4]:
+                emoji = "🟢" if s["pnl_eur"] >= 0 else "🔴"
+                sections.append(
+                    f"  {emoji} {s['sector']}: {s['pnl_eur']:+,.0f} EUR"
+                )
+            conc = attr["concentration"]
+            sections.append(
+                f"  🎯 Konzentration: {conc['risk_level']} "
+                f"(Top-3 = {conc['top3_pnl_share']:.0f}%)"
+            )
+            sections.append("")
+    except Exception:
+        pass
+
     # ── Analyse-Report Details ──
     if report:
         # Portfolio Score

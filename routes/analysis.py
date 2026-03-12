@@ -246,13 +246,3 @@ async def get_sector_rotation():
 
     return await get_sector_rotation(portfolio_sectors)
 
-
-# ─────────────────────────────────────────────────────────────
-# D5: Portfolio-History-Endpoint
-# ─────────────────────────────────────────────────────────────
-
-@router.get("/api/portfolio/history")
-async def get_portfolio_history(days: int = 90):
-    """Portfolio-Wert-Verlauf für Performance-Chart."""
-    from engine.history import load_history
-    return load_history(days=days)

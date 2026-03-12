@@ -3,8 +3,12 @@
 Endpunkte für erweiterte Analysen:
   - Dividenden, Benchmark, Korrelation, Risk, Earnings, News,
     Score-History, Movers (Gewinner/Verlierer), Heatmap
+
+Performance: Teuer berechnete Endpoints (Korrelation, Risk, Benchmark, Indices)
+werden mit einem In-Memory-Cache (15min TTL) zwischengespeichert.
 """
 import logging
+import time
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
@@ -15,6 +19,24 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# In-Memory Cache für teure Analytics-Berechnungen (TTL-basiert)
+_analytics_cache: dict[str, tuple[float, any]] = {}  # key -> (timestamp, data)
+_CACHE_TTL_SECONDS = 900  # 15 Minuten
+
+
+def _get_cached(key: str):
+    """Holt gecachte Daten wenn TTL nicht abgelaufen."""
+    if key in _analytics_cache:
+        ts, data = _analytics_cache[key]
+        if time.time() - ts < _CACHE_TTL_SECONDS:
+            return data
+    return None
+
+
+def _set_cached(key: str, data):
+    """Speichert Daten im Analytics-Cache."""
+    _analytics_cache[key] = (time.time(), data)
+
 
 # ─────────────────────────────────────────────────────────────
 # Market Indices (Nasdaq, S&P 500, DAX)
@@ -22,7 +44,11 @@ router = APIRouter()
 
 @router.get("/api/market-indices")
 async def get_market_indices():
-    """Tagesaktuelle Werte der wichtigsten Indizes."""
+    """Tagesaktuelle Werte der wichtigsten Indizes (gecacht 15min)."""
+    cached = _get_cached("market_indices")
+    if cached is not None:
+        return cached
+
     indices = [
         {"symbol": "^GSPC", "name": "S&P 500"},
         {"symbol": "^IXIC", "name": "Nasdaq"},
@@ -69,6 +95,8 @@ async def get_market_indices():
     except Exception as e:
         logger.error(f"Market-Indices fehlgeschlagen: {e}")
 
+    if results:
+        _set_cached("market_indices", results)
     return results
 
 
@@ -93,12 +121,17 @@ async def get_dividends():
 
 @router.get("/api/benchmark")
 async def get_benchmark(symbol: str = "SPY", period: str = "6month"):
-    """Benchmark-Vergleich: Portfolio vs. Index.
+    """Benchmark-Vergleich: Portfolio vs. Index (gecacht 15min).
 
     Unterstützt: SPY (S&P 500), IWDA.AS (MSCI World), QQQ (Nasdaq)
     """
     if period not in ("1month", "3month", "6month", "1year"):
         period = "6month"
+
+    cache_key = f"benchmark_{symbol}_{period}"
+    cached = _get_cached(cache_key)
+    if cached is not None:
+        return cached
 
     days_map = {"1month": 30, "3month": 90, "6month": 180, "1year": 365}
     days = days_map.get(period, 180)
@@ -146,13 +179,15 @@ async def get_benchmark(symbol: str = "SPY", period: str = "6month"):
                     "return_pct": round(pct, 2),
                 })
 
-        return {
+        result = {
             "benchmark_symbol": symbol,
             "benchmark_name": _benchmark_name(symbol),
             "period": period,
             "benchmark": benchmark_data,
             "portfolio": portfolio_data_series,
         }
+        _set_cached(cache_key, result)
+        return result
 
     except Exception as e:
         logger.error(f"Benchmark-Vergleich fehlgeschlagen: {e}")
@@ -175,7 +210,11 @@ def _benchmark_name(symbol: str) -> str:
 
 @router.get("/api/correlation")
 async def get_correlation():
-    """Korrelationsmatrix und Diversifikations-Score."""
+    """Korrelationsmatrix und Diversifikations-Score (gecacht 15min)."""
+    cached = _get_cached("correlation")
+    if cached is not None:
+        return cached
+
     summary = portfolio_data.get("summary")
     if not summary or not summary.stocks:
         return JSONResponse({"error": "Keine Daten"}, status_code=503)
@@ -208,7 +247,9 @@ async def get_correlation():
                 continue
 
         from engine.analytics import calculate_correlation_matrix
-        return calculate_correlation_matrix(price_data)
+        result = calculate_correlation_matrix(price_data)
+        _set_cached("correlation", result)
+        return result
 
     except Exception as e:
         logger.error(f"Korrelationsmatrix fehlgeschlagen: {e}")
@@ -260,7 +301,11 @@ async def get_stock_news(ticker: str, limit: int = 5):
 
 @router.get("/api/risk")
 async def get_risk():
-    """Portfolio-Risikokennzahlen: Beta, VaR, Max Drawdown."""
+    """Portfolio-Risikokennzahlen: Beta, VaR, Max Drawdown (gecacht 15min)."""
+    cached = _get_cached("risk")
+    if cached is not None:
+        return cached
+
     summary = portfolio_data.get("summary")
     if not summary or not summary.stocks:
         return JSONResponse({"error": "Keine Daten"}, status_code=503)
@@ -313,7 +358,9 @@ async def get_risk():
                 portfolio_returns.append(daily_ret)
 
         from engine.analytics import calculate_portfolio_risk
-        return calculate_portfolio_risk(summary.stocks, portfolio_returns)
+        result = calculate_portfolio_risk(summary.stocks, portfolio_returns)
+        _set_cached("risk", result)
+        return result
 
     except Exception as e:
         logger.error(f"Risiko-Berechnung fehlgeschlagen: {e}")
@@ -413,3 +460,27 @@ async def get_heatmap():
 
     result.sort(key=lambda x: x["value"], reverse=True)
     return result
+
+
+# ─────────────────────────────────────────────────────────────
+# #15: Performance Attribution
+# ─────────────────────────────────────────────────────────────
+
+@router.get("/api/attribution")
+async def get_attribution():
+    """Performance Attribution: P&L-Zerlegung nach Position, Sektor, Dividenden."""
+    summary = portfolio_data.get("summary")
+    if not summary or not summary.stocks:
+        return JSONResponse({"error": "Keine Daten"}, status_code=503)
+
+    # Dividenden-Activities laden (cached, kein extra API-Call)
+    activities = None
+    try:
+        from fetchers.parqet import fetch_portfolio_activities_raw
+        activities = await fetch_portfolio_activities_raw()
+    except Exception:
+        pass
+
+    from engine.attribution import calculate_attribution
+    return calculate_attribution(summary.stocks, activities)
+

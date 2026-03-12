@@ -10,6 +10,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 
 from config import settings
 from cache_manager import CacheManager
@@ -194,10 +195,18 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Static files
+# GZip-Kompression für alle Responses (>500 Bytes)
+# → ~70% Payload-Reduktion für JSON-APIs und Static Files
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
+# Static files mit Cache-Control Headers (1 Stunde)
 STATIC_DIR = Path(__file__).parent / "static"
 STATIC_DIR.mkdir(exist_ok=True)
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+app.mount(
+    "/static",
+    StaticFiles(directory=str(STATIC_DIR)),
+    name="static",
+)
 
 # Include routers
 app.include_router(portfolio_router)

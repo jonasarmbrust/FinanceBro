@@ -39,6 +39,20 @@ _fmp_semaphore = asyncio.Semaphore(3)
 _fmp_request_count = 0
 _fmp_request_date = None  # Wird beim ersten Request gesetzt
 
+# Reusable HTTP-Client mit Connection-Pooling (vermeidet ~160 TCP-Handshakes pro Refresh)
+_http_client: Optional[httpx.AsyncClient] = None
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    """Gibt den wiederverwendbaren HTTP-Client zurück (Lazy-Init)."""
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(
+            timeout=30,
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+        )
+    return _http_client
+
 
 def get_fmp_usage() -> dict:
     """Gibt aktuelle FMP-Nutzungsstatistiken zurück."""
@@ -59,6 +73,7 @@ async def _fmp_request(endpoint: str, params: Optional[dict] = None) -> Optional
     Stable API Format: /stable/{endpoint}?symbol=AAPL&apikey=...
     Retries 1x on rate limit (429) with 15s backoff.
     When globally rate-limited (Tageslimit erschoepft), ueberspringt sofort.
+    Nutzt einen wiederverwendbaren HTTP-Client mit Connection-Pooling.
     """
     global _rate_limited
     if settings.demo_mode:
@@ -77,22 +92,22 @@ async def _fmp_request(endpoint: str, params: Optional[dict] = None) -> Optional
     max_retries = 1
     base_delay = 15  # Sekunden
 
+    client = _get_http_client()
     for attempt in range(max_retries + 1):
         try:
             async with _fmp_semaphore:
-                async with httpx.AsyncClient(timeout=30) as client:
-                    response = await client.get(url, params=params)
-                    response.raise_for_status()
-                    _rate_limited = False
-                    # Usage tracking
-                    global _fmp_request_count, _fmp_request_date
-                    from datetime import date
-                    today = date.today().isoformat()
-                    if _fmp_request_date != today:
-                        _fmp_request_count = 0
-                        _fmp_request_date = today
-                    _fmp_request_count += 1
-                    return response.json()
+                response = await client.get(url, params=params)
+                response.raise_for_status()
+                _rate_limited = False
+                # Usage tracking
+                global _fmp_request_count, _fmp_request_date
+                from datetime import date
+                today = date.today().isoformat()
+                if _fmp_request_date != today:
+                    _fmp_request_count = 0
+                    _fmp_request_date = today
+                _fmp_request_count += 1
+                return response.json()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 429:
                 _rate_limited = True

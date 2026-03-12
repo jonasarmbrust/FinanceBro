@@ -89,9 +89,18 @@ async def _do_refresh():
 
         is_demo = False
         if not positions:
-            logger.info("📋 Kein Portfolio gefunden - lade Demo-Daten")
-            positions = get_demo_positions()
-            is_demo = True
+            if settings.ENVIRONMENT == "production":
+                # Production: NIEMALS Demo-Daten laden!
+                # Stattdessen existierende Daten behalten oder leeres Portfolio
+                logger.warning(
+                    "⚠️ Production: Kein Portfolio von Parqet erhalten. "
+                    "Bitte /api/parqet/authorize aufrufen fuer OAuth2-Login."
+                )
+                return
+            else:
+                logger.info("📋 Kein Portfolio gefunden - lade Demo-Daten (Entwicklungsmodus)")
+                positions = get_demo_positions()
+                is_demo = True
 
         # --- 2. Hole Daten für jede Position ---
         stocks = []

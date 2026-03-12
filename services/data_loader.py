@@ -136,14 +136,14 @@ async def load_position_data(
 async def load_positions_batched(
     positions: list[PortfolioPosition],
     fear_greed_data: Optional[FearGreedData] = None,
-    batch_size: int = 2,
+    batch_size: int = 4,
 ) -> list[StockFullData]:
     """Lädt Daten für alle Positionen in Batches.
 
     Args:
         positions: Liste von Positionen
         fear_greed_data: Aktueller Fear&Greed Index
-        batch_size: Anzahl paralleler Positionen pro Batch
+        batch_size: Anzahl paralleler Positionen pro Batch (4 für optimale FMP-Nutzung)
 
     Returns:
         Liste von StockFullData
@@ -160,12 +160,19 @@ async def load_positions_batched(
         stocks.extend(results)
         # Pause between batches to respect FMP rate limits
         if i + batch_size < len(positions):
-            await asyncio.sleep(3)
+            await asyncio.sleep(1.5)  # 1.5s reicht für FMP Free Tier (~4 req/s)
 
-    # Flush FMP cache to disk
+    # Flush all caches to disk (batch-level statt per-ticker)
     try:
         from fetchers.fmp import flush_cache as flush_fmp
         flush_fmp()
+    except Exception:
+        pass
+    try:
+        from cache_manager import CacheManager
+        for name in ("yfinance", "technical"):
+            if name in CacheManager._registry:
+                CacheManager._registry[name].flush()
     except Exception:
         pass
 

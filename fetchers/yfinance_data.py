@@ -58,8 +58,7 @@ async def fetch_yfinance_data(ticker_symbol: str):
         )
         if data:
             _cache.set(cache_key, data.model_dump())
-            _cache.flush()
-            return data
+            return data  # flush am Batch-Ende in data_loader
     except asyncio.TimeoutError:
         logger.debug(f"yfinance Timeout für {ticker_symbol}")
     except Exception as e:

@@ -58,6 +58,8 @@ async def handle_update(update: dict) -> None:
     elif cmd == "/risk":
         scenario = " ".join(args) if args else None
         await _cmd_risk(chat_id, scenario)
+    elif cmd == "/attribution":
+        await _cmd_attribution(chat_id)
     elif cmd == "/start":
         await _cmd_start(chat_id)
     elif cmd == "/help":
@@ -99,6 +101,7 @@ async def _cmd_help(chat_id: str):
         "📋 *FinanzBro Befehle*\n\n"
         "  /portfolio — Portfolio mit Scores und P&L\n"
         "  /score AAPL — Detail-Score einer Aktie\n"
+        "  /attribution — Performance-Attribution\n"
         "  /earnings — Earnings-Analyse\n"
         "  /risk — Risiko-Szenarien\n"
         "  /news — Marktanalyse\n"
@@ -417,6 +420,83 @@ def _get_portfolio_context() -> str:
         return "\n".join(lines) if lines else ""
     except Exception:
         return ""
+
+
+# ─────────────────────────────────────────────────────────────
+# Performance Attribution
+# ─────────────────────────────────────────────────────────────
+
+async def _cmd_attribution(chat_id: str):
+    """Performance Attribution: P&L-Zerlegung."""
+    from services.telegram import send_message
+    from state import portfolio_data
+
+    summary = portfolio_data.get("summary")
+    if not summary or not summary.stocks:
+        await send_message("⚠️ Keine Portfolio-Daten. Bitte /refresh starten.", chat_id=chat_id)
+        return
+
+    # Activities für Dividenden laden
+    activities = None
+    try:
+        from fetchers.parqet import fetch_portfolio_activities_raw
+        activities = await fetch_portfolio_activities_raw()
+    except Exception:
+        pass
+
+    from engine.attribution import calculate_attribution
+    attr = calculate_attribution(summary.stocks, activities)
+
+    lines = ["📊 *Performance Attribution*\n"]
+
+    # Gesamt
+    pnl_emoji = "📈" if attr["total_pnl_eur"] >= 0 else "📉"
+    lines.append(
+        f"{pnl_emoji} Gesamt-P&L: {attr['total_pnl_eur']:+,.2f} EUR "
+        f"({attr['total_pnl_pct']:+.1f}%)"
+    )
+
+    # Sektor-Beitrag
+    if attr["sectors"]:
+        lines.append("\n🏢 *Sektor-Beitrag:*")
+        for s in attr["sectors"][:5]:
+            emoji = "🟢" if s["pnl_eur"] >= 0 else "🔴"
+            lines.append(
+                f"  {emoji} {s['sector']}: {s['pnl_eur']:+,.0f} EUR "
+                f"({s['contribution_pct']:+.1f}pp)"
+            )
+
+    # Top/Flop
+    if attr["top_performers"]:
+        lines.append("\n🏆 *Top-Performer:*")
+        for p in attr["top_performers"][:3]:
+            lines.append(
+                f"  🟢 {p['ticker']}: {p['pnl_eur']:+,.0f} EUR "
+                f"({p['pnl_pct']:+.1f}%)"
+            )
+
+    if attr["worst_performers"]:
+        lines.append("\n📉 *Flop-Performer:*")
+        for p in attr["worst_performers"][:3]:
+            lines.append(
+                f"  🔴 {p['ticker']}: {p['pnl_eur']:+,.0f} EUR "
+                f"({p['pnl_pct']:+.1f}%)"
+            )
+
+    # Dividenden
+    div = attr["dividends"]
+    if div["total_eur"] > 0:
+        lines.append(f"\n💵 Dividenden (gesamt): {div['total_eur']:,.2f} EUR")
+
+    # Konzentration
+    conc = attr["concentration"]
+    lines.append(
+        f"\n🎯 *Konzentration:* {conc['risk_level']} "
+        f"(Top-3 = {conc['top3_pnl_share']:.0f}% des P&L)"
+    )
+
+    await send_message("\n".join(lines), chat_id=chat_id)
+    logger.info("✅ /attribution ausgeführt")
 
 
 # ─────────────────────────────────────────────────────────────

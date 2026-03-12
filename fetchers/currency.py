@@ -21,6 +21,17 @@ DEFAULT_EUR_USD = 1.08
 DEFAULT_EUR_DKK = 7.46
 DEFAULT_EUR_GBP = 0.855
 
+# Reusable HTTP-Client (vermeidet TCP-Handshake pro Aufruf)
+_http_client: httpx.AsyncClient | None = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    """Gibt den wiederverwendbaren HTTP-Client zurück."""
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(timeout=10)
+    return _http_client
+
 
 async def _fetch_all_rates_from_exchangerate_api() -> Optional[dict]:
     """Holt alle Wechselkurse mit einem einzigen API-Call."""
@@ -30,16 +41,15 @@ async def _fetch_all_rates_from_exchangerate_api() -> Optional[dict]:
         return cached
 
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.get("https://api.exchangerate-api.com/v4/latest/EUR")
-            response.raise_for_status()
-            data = response.json()
-            rates = data.get("rates", {})
-            if rates:
-                _cache.set(cache_key, rates)
-                _cache.flush()
-                logger.info(f"Wechselkurse geladen: USD={rates.get('USD')}, DKK={rates.get('DKK')}, GBP={rates.get('GBP')}")
-                return rates
+        client = _get_client()
+        response = await client.get("https://api.exchangerate-api.com/v4/latest/EUR")
+        response.raise_for_status()
+        data = response.json()
+        rates = data.get("rates", {})
+        if rates:
+            _cache.set(cache_key, rates)
+            logger.info(f"Wechselkurse geladen: USD={rates.get('USD')}, DKK={rates.get('DKK')}, GBP={rates.get('GBP')}")
+            return rates
     except Exception as e:
         logger.debug(f"ExchangeRate API fehlgeschlagen: {e}")
 
@@ -53,26 +63,26 @@ async def _fetch_from_fmp() -> Optional[float]:
 
     try:
         url = f"{settings.FMP_BASE_URL}/quote"
-        async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.get(url, params={
-                "symbol": "EURUSD",
-                "apikey": settings.FMP_API_KEY,
-            })
-            response.raise_for_status()
-            data = response.json()
+        client = _get_client()
+        response = await client.get(url, params={
+            "symbol": "EURUSD",
+            "apikey": settings.FMP_API_KEY,
+        })
+        response.raise_for_status()
+        data = response.json()
 
-            if isinstance(data, list) and len(data) > 0:
-                price = data[0].get("price")
-                if price and float(price) > 0:
-                    rate = round(float(price), 4)
-                    logger.info(f"EUR/USD via FMP: {rate}")
-                    return rate
-            elif isinstance(data, dict):
-                price = data.get("price")
-                if price and float(price) > 0:
-                    rate = round(float(price), 4)
-                    logger.info(f"EUR/USD via FMP: {rate}")
-                    return rate
+        if isinstance(data, list) and len(data) > 0:
+            price = data[0].get("price")
+            if price and float(price) > 0:
+                rate = round(float(price), 4)
+                logger.info(f"EUR/USD via FMP: {rate}")
+                return rate
+        elif isinstance(data, dict):
+            price = data.get("price")
+            if price and float(price) > 0:
+                rate = round(float(price), 4)
+                logger.info(f"EUR/USD via FMP: {rate}")
+                return rate
     except Exception as e:
         logger.debug(f"FMP Forex fehlgeschlagen: {e}")
 
@@ -108,7 +118,7 @@ async def fetch_eur_usd_rate() -> float:
         return DEFAULT_EUR_USD
 
     _cache.set(cache_key, rate)
-    _cache.flush()
+    _cache.flush()  # EUR/USD ist der erste Kurs → flush auslösen
     return rate
 
 
@@ -129,8 +139,7 @@ async def fetch_eur_dkk_rate() -> float:
         if dkk and float(dkk) > 0:
             rate = round(float(dkk), 4)
             _cache.set(cache_key, rate)
-            _cache.flush()
-            return rate
+            return rate  # flush wird nach EUR/USD bereits aufgerufen
 
     logger.warning(f"EUR/DKK-Kurs nicht verfügbar – nutze Default {DEFAULT_EUR_DKK}")
     return DEFAULT_EUR_DKK
@@ -153,8 +162,7 @@ async def fetch_eur_gbp_rate() -> float:
         if gbp and float(gbp) > 0:
             rate = round(float(gbp), 4)
             _cache.set(cache_key, rate)
-            _cache.flush()
-            return rate
+            return rate  # flush wird nach EUR/USD bereits aufgerufen
 
     logger.warning(f"EUR/GBP-Kurs nicht verfügbar – nutze Default {DEFAULT_EUR_GBP}")
     return DEFAULT_EUR_GBP
