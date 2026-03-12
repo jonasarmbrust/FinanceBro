@@ -106,9 +106,9 @@ async def get_portfolio_history(days: int = 90):
                     cumulative += amount
                 elif act_type in ("sell", "verkauf", "sale"):
                     cumulative -= amount
-                elif act_type in ("transferin",):
+                elif act_type in ("transferin", "transfer_in"):
                     cumulative += amount
-                elif act_type in ("transferout",):
+                elif act_type in ("transferout", "transfer_out"):
                     cumulative -= amount
 
                 daily_invested[date] = round(cumulative, 2)

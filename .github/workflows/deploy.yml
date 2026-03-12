@@ -1,0 +1,96 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+env:
+  PROJECT_ID: job-automation-jonas
+  REGION: europe-west1
+  SERVICE: finanzbro
+  IMAGE: europe-west1-docker.pkg.dev/job-automation-jonas/finanzbro/finanzbro
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m pytest tests/ -v --tb=short
+
+  deploy:
+    name: Deploy to Cloud Run
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/384210760656/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-deploy@job-automation-jonas.iam.gserviceaccount.com
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build Docker image
+        run: docker build -t ${{ env.IMAGE }}:${{ github.sha }} -t ${{ env.IMAGE }}:latest .
+
+      - name: Push Docker image
+        run: |
+          docker push ${{ env.IMAGE }}:${{ github.sha }}
+          docker push ${{ env.IMAGE }}:latest
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.SERVICE }} \
+            --image=${{ env.IMAGE }}:${{ github.sha }} \
+            --region=${{ env.REGION }} \
+            --allow-unauthenticated \
+            --memory=512Mi \
+            --cpu=1 \
+            --min-instances=0 \
+            --max-instances=1 \
+            --timeout=300 \
+            --set-env-vars="ENVIRONMENT=production" \
+            --set-env-vars="GCP_PROJECT_ID=${{ env.PROJECT_ID }}" \
+            --set-env-vars="FMP_API_KEY=${{ secrets.FMP_API_KEY }}" \
+            --set-env-vars="FINNHUB_API_KEY=${{ secrets.FINNHUB_API_KEY }}" \
+            --set-env-vars="TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" \
+            --set-env-vars="TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            --set-env-vars="GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" \
+            --set-env-vars="PARQET_PORTFOLIO_ID=${{ secrets.PARQET_PORTFOLIO_ID }}" \
+            --set-env-vars="DAILY_REFRESH_TIME=06:00" \
+            --set-env-vars="PRICE_UPDATE_INTERVAL_MIN=30" \
+            --set-env-vars="AI_AGENT_TIME=15:50" \
+            --quiet
+
+      - name: Show service URL
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE }} --region=${{ env.REGION }} --format='value(status.url)')
+          echo "### 🚀 Deployed to Cloud Run" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** $URL" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
