@@ -154,6 +154,8 @@ async def update_yfinance_prices() -> dict:
         return {"status": "no_portfolio"}
 
     try:
+        import sys
+        print(f"[YF-DEBUG] Starting yFinance price update, {len(summary.stocks)} stocks", flush=True, file=sys.stderr)
         logger.info("📈 yFinance Kurs-Update gestartet...")
 
         # Wechselkurse laden
@@ -163,9 +165,14 @@ async def update_yfinance_prices() -> dict:
         stock_tickers = [s.position.ticker for s in summary.stocks if s.position.ticker != "CASH"]
         ticker_to_yf = {t: YFINANCE_ALIASES.get(t, t) for t in stock_tickers}
         yf_tickers = list(set(ticker_to_yf.values()))
+        print(f"[YF-DEBUG] yf_tickers={yf_tickers[:5]}... ({len(yf_tickers)} total)", flush=True, file=sys.stderr)
 
         # 1. Batch-Download: Preise + Daily Changes
         prices_raw, daily_raw = await quick_price_update(yf_tickers) if yf_tickers else ({}, {})
+        print(f"[YF-DEBUG] prices_raw={len(prices_raw)} daily_raw={len(daily_raw)}", flush=True, file=sys.stderr)
+        if daily_raw:
+            sample = list(daily_raw.items())[:3]
+            print(f"[YF-DEBUG] daily sample: {sample}", flush=True, file=sys.stderr)
 
         # Map zurück auf Original-Ticker
         prices = {}
@@ -175,6 +182,7 @@ async def update_yfinance_prices() -> dict:
                 prices[orig] = prices_raw[yf_t]
             if yf_t in daily_raw:
                 daily_changes[orig] = daily_raw[yf_t]
+        print(f"[YF-DEBUG] mapped prices={len(prices)} daily={len(daily_changes)}", flush=True, file=sys.stderr)
 
         # 2. ISIN-basierte Ticker Fallback
         isin_positions = [s.position for s in summary.stocks
