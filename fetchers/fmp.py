@@ -39,6 +39,14 @@ _fmp_semaphore = asyncio.Semaphore(3)
 _fmp_request_count = 0
 _fmp_request_date = None  # Wird beim ersten Request gesetzt
 
+
+def reset_rate_limit():
+    """Setzt Rate-Limiting zurück (z.B. bei neuem Tag oder manuellem Refresh)."""
+    global _rate_limited, _fmp_request_count
+    _rate_limited = False
+    _fmp_request_count = 0
+    logger.info("FMP Rate-Limit zurückgesetzt")
+
 # Reusable HTTP-Client mit Connection-Pooling (vermeidet ~160 TCP-Handshakes pro Refresh)
 _http_client: Optional[httpx.AsyncClient] = None
 
@@ -75,9 +83,17 @@ async def _fmp_request(endpoint: str, params: Optional[dict] = None) -> Optional
     When globally rate-limited (Tageslimit erschoepft), ueberspringt sofort.
     Nutzt einen wiederverwendbaren HTTP-Client mit Connection-Pooling.
     """
-    global _rate_limited
+    global _rate_limited, _fmp_request_count, _fmp_request_date
     if settings.demo_mode:
         return None
+
+    # Rate-Limit bei neuem Tag automatisch zurücksetzen
+    from datetime import date
+    today = date.today().isoformat()
+    if _fmp_request_date and _fmp_request_date != today:
+        _rate_limited = False
+        _fmp_request_count = 0
+        logger.info(f"FMP neuer Tag — Rate-Limit zurückgesetzt")
 
     # Wenn bereits global rate-limited: sofort ueberspringen
     # (verhindert minutenlanges Warten wenn Tageslimit aufgebraucht)
@@ -100,7 +116,6 @@ async def _fmp_request(endpoint: str, params: Optional[dict] = None) -> Optional
                 response.raise_for_status()
                 _rate_limited = False
                 # Usage tracking
-                global _fmp_request_count, _fmp_request_date
                 from datetime import date
                 today = date.today().isoformat()
                 if _fmp_request_date != today:

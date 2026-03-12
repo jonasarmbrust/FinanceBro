@@ -114,10 +114,10 @@ async def lifespan(app: FastAPI):
 
         scheduler.add_job(
             _run_weekly_digest, "cron",
-            day_of_week="sun", hour=18, minute=0,
+            day_of_week="fri", hour=22, minute=30,
             id="weekly_digest",
         )
-        logger.info("📧 Wöchentlicher Digest geplant: Sonntag 18:00 CET")
+        logger.info("📧 Wöchentlicher Digest geplant: Freitag 22:30 CET (nach US-Börsenschluss)")
 
         # AI Finance Agent wird automatisch nach jeder Analyse in _do_refresh() getriggert
         if settings.telegram_configured:

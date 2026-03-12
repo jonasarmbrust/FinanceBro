@@ -117,6 +117,13 @@ async def _do_refresh():
         stocks = []
         scores_dict = {}
 
+        # FMP Rate-Limit zurücksetzen (neuer Refresh = frisches Budget)
+        try:
+            from fetchers.fmp import reset_rate_limit
+            reset_rate_limit()
+        except Exception:
+            pass
+
         if is_demo:
             demo_fund = get_demo_fundamentals()
             demo_analyst = get_demo_analyst_data()

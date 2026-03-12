@@ -19,7 +19,8 @@ set -e
 # ============ Konfiguration ============
 JOB_NAME="finanzbro-daily"
 REGION="europe-west1"
-SCHEDULE="15 16 * * *"  # Täglich um 16:15 CET
+SCHEDULE="15 16 * * 1-5"  # Mo-Fr um 16:15 CET (tägliche Analyse)
+SCHEDULE_WEEKLY="30 22 * * 5"  # Freitag 22:30 CET (Weekly Digest nach US-Börsenschluss)
 TIMEZONE="Europe/Berlin"
 
 # ============ Checks ============
@@ -109,8 +110,8 @@ gcloud run jobs update $JOB_NAME \
     --set-env-vars "GEMINI_API_KEY=${GEMINI_API_KEY:-}" \
     --quiet
 
-# ============ Cloud Scheduler erstellen ============
-echo "⏰ Erstelle Cloud Scheduler..."
+# ============ Cloud Scheduler: Daily (Mo-Fr) ============
+echo "⏰ Erstelle Cloud Scheduler (Daily)..."
 
 # Service Account für Scheduler
 SA_EMAIL="${PROJECT}@appspot.gserviceaccount.com"
@@ -132,14 +133,34 @@ gcloud scheduler jobs update http "${JOB_NAME}-trigger" \
     --oauth-service-account-email "$SA_EMAIL" \
     --quiet
 
+# ============ Cloud Scheduler: Weekly Digest (Fr 18:30) ============
+echo "⏰ Erstelle Cloud Scheduler (Weekly Digest)..."
+
+gcloud scheduler jobs create http "${JOB_NAME}-weekly" \
+    --location $REGION \
+    --schedule "$SCHEDULE_WEEKLY" \
+    --time-zone "$TIMEZONE" \
+    --uri "https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT}/jobs/${JOB_NAME}:run" \
+    --http-method POST \
+    --oauth-service-account-email "$SA_EMAIL" \
+    --quiet 2>/dev/null || \
+gcloud scheduler jobs update http "${JOB_NAME}-weekly" \
+    --location $REGION \
+    --schedule "$SCHEDULE_WEEKLY" \
+    --time-zone "$TIMEZONE" \
+    --uri "https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT}/jobs/${JOB_NAME}:run" \
+    --http-method POST \
+    --oauth-service-account-email "$SA_EMAIL" \
+    --quiet
+
 echo ""
 echo "✅ Deployment erfolgreich!"
 echo ""
 echo "📋 Zusammenfassung:"
 echo "   Job:       $JOB_NAME"
 echo "   Image:     $IMAGE"
-echo "   Schedule:  Täglich um 16:15 CET"
-echo "   Telegram:  Report wird automatisch gesendet"
+echo "   Daily:     Mo-Fr 16:15 CET (Analyse + Telegram-Report)"
+echo "   Weekly:    Fr 22:30 CET (Weekly Digest nach US-Börsenschluss)"
 echo ""
 echo "💡 Manuell ausführen:"
 echo "   gcloud run jobs execute $JOB_NAME --region $REGION"

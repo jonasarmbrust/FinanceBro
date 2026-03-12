@@ -55,6 +55,20 @@ async def run_job():
     # Telegram-Report wird automatisch in _do_refresh() nach der Analyse getriggert.
     # Kein separater Aufruf nötig (verhindert Doppel-Versand).
 
+    # 3. Weekly Digest (nur Freitags — nach Börsenschluss)
+    from datetime import datetime as _dt
+    import zoneinfo
+    _now = _dt.now(zoneinfo.ZoneInfo("Europe/Berlin"))
+    if _now.weekday() == 4:  # 4 = Freitag
+        logger.info("📧 Freitag erkannt — sende Weekly Digest...")
+        try:
+            from services.weekly_digest import send_weekly_digest
+            await send_weekly_digest()
+        except Exception as e:
+            logger.warning(f"Weekly Digest fehlgeschlagen: {e}")
+    else:
+        logger.info(f"📧 Weekly Digest übersprungen (nur Freitags, heute: {_now.strftime('%A')})")
+
     logger.info("🏁 FinanzBro Cloud Run Job beendet")
 
 

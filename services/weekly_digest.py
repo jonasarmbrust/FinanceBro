@@ -1,12 +1,12 @@
 """FinanzBro - Wöchentlicher Performance-Digest (Gemini 2.0 Flash).
 
-Sonntags-Report mit Wochenrückblick:
+Freitags-Report nach Börsenschluss mit Wochenrückblick:
   - Wochen-Performance (P&L)
   - Score-Veränderungen (Trends)
   - Trendwende-Aktien
   - KI-generierte Zusammenfassung
 
-Wird via Scheduler (Sonntag 18:00) oder manuell getriggert.
+Wird via Cloud Run Job (Freitag 22:30 CET, nach US-Börsenschluss) oder manuell getriggert.
 """
 import logging
 from datetime import datetime, timedelta
