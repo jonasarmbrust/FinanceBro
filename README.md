@@ -10,10 +10,11 @@ Browser (HTML/JS/CSS)
     ↕ REST API + SSE
 FastAPI Backend (lokal / Cloud Run)
     ├── routes/          → API-Endpunkte
-    ├── engine/          → Scoring, Analyse, Rebalancing, Analytics
-    ├── services/        → Refresh, AI Agent, Telegram, Scheduler
+    ├── engine/          → Scoring, Analyse, Rebalancing, Attribution
+    ├── services/        → Refresh, AI Agent, Telegram Bot, Vertex AI
     ├── fetchers/        → Datenquellen (Parqet, FMP, yfinance, Finnhub)
-    └── cache/           → Persistente Caches (JSON)
+    ├── database.py      → SQLite Persistenz (WAL, Score-History, Snapshots)
+    └── cache/           → In-Memory + Disk Caches
 ```
 
 ## Datenquellen
@@ -25,22 +26,51 @@ FastAPI Backend (lokal / Cloud Run)
 | **yfinance** | `fetchers/yfinance_data.py` | – | Kurse, Historische Daten, Market-Cap, Beta, Indizes |
 | **Finnhub** | `fetchers/finnhub_ws.py` | `FINNHUB_API_KEY` | Echtzeit-Kurse (WebSocket, nur US) |
 | **CNN** | `fetchers/fear_greed.py` | – | Fear & Greed Index |
-| **Currency** | `fetchers/currency.py` | – | EUR/USD, EUR/DKK, EUR/GBP Wechselkurse |
+| **Vertex AI** | `services/vertex_ai.py` | GCP Service Account | Gemini Pro/Flash, Search Grounding |
 
 > FMP Free Tier: 250 Requests/Tag. Alle anderen Quellen sind kostenlos.
 
-## Parqet API-Anbindung
+## Scoring Engine (`engine/scorer.py`)
 
-Drei Datenquellen in Prioritätsreihenfolge (20 Positionen = 19 Aktien + 1 Cash):
+10-Faktor-Bewertungssystem (0–100 Score):
 
-| Priorität | Endpoint | Methode | Beschreibung |
-|-----------|----------|---------|--------------|
-| **1. Performance** | `POST /performance` | Connect API | Fertige Holdings mit Positionen + Cash (1 API-Call) |
-| 2. Activities | `GET /activities` | Connect API | Cursor-Pagination, manuell aggregieren |
-| 3. Activities | `GET /activities` | Internal API | Offset-Pagination, Supabase JWT (nur lokal) |
+| Faktor | Gewicht | Quelle |
+|---|---|---|
+| Quality (ROE, Margins, Debt) | 20% | FMP |
+| Valuation (P/E, P/B, PEG) | 15% | FMP |
+| Analyst Consensus + Kursziele | 15% | FMP (verifiziert via Track Record) |
+| Technical (RSI, SMA, MACD) | 10% | yfinance |
+| Growth (Revenue, Earnings) | 15% | FMP + yfinance |
+| Market Sentiment (Fear&Greed) | 10% | CNN |
+| Momentum (30d, 90d, 180d) | 5% | yfinance |
+| ESG Risk | 5% | yfinance |
+| Insider Trading | 5% | yfinance |
+| Quantitative (FMP Rating) | – | FMP (in Quality integriert) |
 
-**Setup Cloud Run:** Einmalig `/api/parqet/authorize` aufrufen → Parqet-Login → OAuth2 Tokens gespeichert.  
-**API-Referenz:** `docs/Parqet API/`
+**Rating:** Buy (≥65), Hold (40–64), Sell (<40)
+
+## AI Features (Vertex AI / Gemini)
+
+| Feature | Modell | Beschreibung |
+|---------|--------|--------------|
+| Score-Kommentare | Flash | KI-Kommentar pro Aktie bei jedem Refresh |
+| Earnings-Analyse | Pro + Grounding | `/earnings` — Echtzeit-Earnings via Search |
+| Portfolio-Chat | Pro + Grounding | Freitext-Fragen in Telegram |
+| Weekly Digest | Flash | Wöchentlicher Summary (Sonntag 18:00) |
+| Risiko-Szenarien | Pro + Grounding | `/risk` — AI-basierte Stress-Analyse |
+| Performance Attribution | Engine | P&L nach Sektor, Top/Flop, Herfindahl-Index |
+
+## Telegram Bot (`/help` für alle Befehle)
+
+| Befehl | Beschreibung |
+|--------|--------------|
+| `/portfolio` | Portfolio-Übersicht |
+| `/score [TICKER]` | Score + AI-Kommentar |
+| `/refresh` | Daten-Refresh starten |
+| `/attribution` | P&L Attribution (Sektor, Top/Flop) |
+| `/earnings [TICKER]` | Earnings-Analyse (AI) |
+| `/risk` | Risiko-Szenarien (AI) |
+| Freitext | Portfolio-Chat (AI) |
 
 ## API-Endpoints
 
@@ -50,74 +80,40 @@ Drei Datenquellen in Prioritätsreihenfolge (20 Positionen = 19 Aktien + 1 Cash)
 | GET | `/` | Dashboard (HTML) |
 | GET | `/api/portfolio` | Portfolio-Daten (JSON) |
 | GET | `/api/stock/{ticker}` | Einzelaktie Details |
-| GET | `/api/stock/{ticker}/history` | Kurshistorie |
 | GET | `/api/portfolio/history` | Portfolio-Wert-Entwicklung |
-| GET | `/api/portfolio/activities` | Transaktionshistorie |
 | GET | `/api/rebalancing` | Rebalancing-Empfehlungen |
 | GET | `/api/tech-picks` | Tech-Aktien Screening |
-| GET | `/api/sectors` | Sektor-Allokation |
 | GET | `/api/fear-greed` | Fear & Greed Index |
 | GET | `/api/status` | System-Status |
 
 ### Refresh (`routes/refresh.py`)
 | Methode | Pfad | Beschreibung |
 |---|---|---|
-| POST | `/api/refresh` | Kompletter Refresh (alle Datenquellen) |
+| POST | `/api/refresh` | Kompletter Refresh |
 | POST | `/api/refresh/prices` | Nur Kurse updaten |
-| POST | `/api/refresh/portfolio` | Parqet + Kurse |
 | POST | `/api/refresh/parqet` | Nur Parqet-Positionen |
 | POST | `/api/refresh/scores` | Nur Scores neuberechnen |
-
-### Analyse (`routes/analysis.py`)
-| Methode | Pfad | Beschreibung |
-|---|---|---|
-| POST | `/api/analysis/run?level=full` | Analyse starten (full/mid/light) |
-| GET | `/api/analysis/latest` | Letzter Report |
-| GET | `/api/analysis/history` | Report-Historie |
-| GET | `/api/analysis/trend/{ticker}` | Score-Trend |
+| GET | `/api/refresh/status` | Refresh-Fortschritt |
 
 ### Analytics (`routes/analytics.py`)
 | Methode | Pfad | Beschreibung |
 |---|---|---|
-| GET | `/api/market-indices` | S&P 500, Nasdaq, DAX Tageswerte |
+| GET | `/api/market-indices` | S&P 500, Nasdaq, DAX |
 | GET | `/api/movers` | Top Gewinner/Verlierer |
-| GET | `/api/heatmap` | Portfolio-Treemap Daten |
+| GET | `/api/heatmap` | Portfolio-Treemap |
 | GET | `/api/dividends` | Dividenden-Übersicht |
-| GET | `/api/benchmark?symbol=SPY&period=6month` | Benchmark-Vergleich |
+| GET | `/api/benchmark` | Benchmark-Vergleich |
 | GET | `/api/correlation` | Korrelationsmatrix |
 | GET | `/api/risk` | Beta, VaR, Max Drawdown |
-| GET | `/api/earnings-calendar` | Nächste Earnings-Termine |
-| GET | `/api/stock/{ticker}/news` | Aktien-News |
-| GET | `/api/stock/{ticker}/score-history` | Score-Verlauf |
+| GET | `/api/attribution` | P&L Attribution |
 
-### OAuth2 (`routes/parqet_oauth.py`)
-| Methode | Pfad | Beschreibung |
-|---|---|---|
-| GET | `/api/parqet/authorize` | OAuth2-Login bei Parqet starten |
-| GET | `/api/parqet/callback` | OAuth2-Callback (automatisch) |
+## Persistenz
 
-### Streaming (`routes/streaming.py`)
-| Methode | Pfad | Beschreibung |
-|---|---|---|
-| GET | `/api/prices/stream` | Server-Sent Events (Echtzeit-Kurse) |
-
-## Scoring Engine (`engine/scorer.py`)
-
-9-Faktor-Bewertungssystem (0–100 Score):
-
-| Faktor | Gewicht | Quelle |
-|---|---|---|
-| Quality (ROE, Margins, Debt) | 20% | FMP |
-| Valuation (P/E, P/B) | 15% | FMP |
-| Analyst Consensus + Kursziele | 15% | FMP |
-| Technical (RSI, SMA, MACD) | 10% | yfinance |
-| Quantitative (FMP Rating) | 5% | FMP |
-| Growth (Revenue, Earnings) | 15% | FMP + yfinance |
-| ESG Risk | 5% | yfinance |
-| Insider Trading | 5% | yfinance |
-| Market Sentiment (Fear&Greed) | 10% | CNN |
-
-**Rating:** Buy (≥65), Hold (40–64), Sell (<40)
+| Speicher | Technologie | Inhalt |
+|----------|------------|--------|
+| SQLite (`finanzbro.db`) | WAL-Modus, Thread-safe | Score-History, Snapshots, Reports |
+| JSON Cache | Memory + Disk | FMP, yFinance, Fear&Greed (volatile) |
+| Parqet Cache | Memory + Disk | Positionen, Tokens (persistent) |
 
 ## Deployment
 
@@ -125,24 +121,16 @@ Drei Datenquellen in Prioritätsreihenfolge (20 Positionen = 19 Aktien + 1 Cash)
 ```bash
 python -m venv venv
 pip install -r requirements.txt
-python main.py
-# → http://localhost:8000
+python main.py  # → http://localhost:8000
 ```
 
 ### Cloud Run
 ```bash
-# 1. Tests laufen lassen
-python -m pytest tests/ -q
-
-# 2. Deployen (bestehende Env-Vars bleiben erhalten)
-gcloud run deploy finanzbro --source . --region europe-west1 \
+python -m pytest tests/ -q                    # 227 Tests
+gcloud run deploy finanzbro --source . \
+  --region europe-west1 \
   --update-env-vars ENVIRONMENT=production,GCP_PROJECT_ID=job-automation-jonas
-
-# 3. OAuth2 re-autorisieren (neuer Container)
-# → https://finanzbro-384210760656.europe-west1.run.app/api/parqet/authorize
 ```
-
-> **Wichtig:** `--update-env-vars` statt `--set-env-vars` verwenden!
 
 ### Environment (.env)
 ```env
@@ -156,71 +144,73 @@ TELEGRAM_BOT_TOKEN=...
 TELEGRAM_CHAT_ID=...
 GEMINI_API_KEY=...
 
-# Cloud Run (automatisch gesetzt)
+# Cloud Run (automatisch)
 ENVIRONMENT=production
 GCP_PROJECT_ID=...
-PARQET_ACCESS_TOKEN=...
-PARQET_REFRESH_TOKEN=...
 ```
 
-### Scheduler (Cloud Run)
+### Scheduler
 
 | Job | Zeit | Funktion |
 |-----|------|----------|
-| Daily Refresh | `06:00` | Voller Daten-Refresh |
-| Price Update | alle `30 min` | Quick-Price-Refresh |
-| AI Agent | `15:50` | KI-Analyse + Telegram-Report |
-
-### Tests
-```bash
-python -m pytest tests/ -v    # 223 Tests
-```
+| Full Analyse | 16:15 | Refresh + Scoring + AI Report |
+| Intraday Kurse | alle 15min (Mo-Fr) | yFinance Batch |
+| Weekly Digest | Sonntag 18:00 | Wöchentliche KI-Zusammenfassung |
 
 ## Projektstruktur
 
 ```
 FinanzBro/
 ├── main.py              # FastAPI App + Startup + Scheduler
-├── config.py            # Konfiguration aus .env
-├── models.py            # Pydantic-Modelle
+├── config.py            # Pydantic Settings v2
+├── models.py            # 31 Pydantic-Modelle
 ├── state.py             # Globaler App-State
-├── cache_manager.py     # JSON-basierter Cache
+├── database.py          # SQLite Persistence (WAL, 3 Tabellen)
+├── cache_manager.py     # Memory+Disk Cache
+├── logging_config.py    # structlog (JSON/Console)
 ├── Dockerfile           # Cloud Run Container
 ├── engine/
-│   ├── scorer.py        # 9-Faktor Score-Berechnung
+│   ├── scorer.py        # 10-Faktor Score-Berechnung
 │   ├── analysis.py      # Report-Generierung + Score-Historie
 │   ├── analytics.py     # Korrelation, Risiko, Dividenden
 │   ├── rebalancer.py    # Rebalancing-Empfehlungen
-│   └── history.py       # Portfolio-Snapshots
+│   ├── attribution.py   # P&L Attribution + Herfindahl-Index
+│   ├── history.py       # Portfolio-Snapshots → SQLite
+│   └── backtest.py      # Score-Backtest Engine
 ├── fetchers/
-│   ├── parqet.py        # Parqet API (Internal + Connect, Cursor/Offset-Pagination)
-│   ├── parqet_auth.py   # Token-Management (JWT, Firefox, OAuth2 PKCE)
+│   ├── parqet.py        # Parqet Connect API (OAuth2 PKCE)
+│   ├── parqet_auth.py   # Token-Management
 │   ├── fmp.py           # Financial Modeling Prep
-│   ├── yfinance_data.py # Yahoo Finance (Batch-Download)
+│   ├── yfinance_data.py # Yahoo Finance (Batch)
 │   ├── finnhub_ws.py    # Finnhub WebSocket
 │   ├── technical.py     # RSI, SMA, MACD
 │   ├── fear_greed.py    # CNN Fear & Greed
 │   ├── currency.py      # Wechselkurse
 │   └── demo_data.py     # Demo-Daten
+├── services/
+│   ├── refresh.py       # Haupt-Refresh (mit Progress-Tracking)
+│   ├── data_loader.py   # Paralleles Batch-Loading
+│   ├── ai_agent.py      # Täglicher AI Telegram-Report
+│   ├── telegram.py      # Telegram API
+│   ├── telegram_bot.py  # Telegram Bot (Command-Handler)
+│   ├── vertex_ai.py     # Gemini Client + Context Caching
+│   ├── earnings_ai.py   # Earnings-Analyse (Gemini Pro)
+│   ├── score_commentary.py  # AI Score-Kommentare (Flash)
+│   ├── weekly_digest.py # Wöchentlicher Digest (Flash)
+│   ├── tech_radar_ai.py # Tech-Empfehlungen (AI)
+│   ├── analyst_tracker.py   # Analysten Track Record
+│   └── currency_converter.py
 ├── routes/
 │   ├── portfolio.py     # Portfolio + Dashboard
-│   ├── refresh.py       # Refresh-Endpunkte
-│   ├── analysis.py      # Analyse-Report
-│   ├── analytics.py     # Erweiterte Analysen
-│   ├── parqet_oauth.py  # OAuth2 PKCE (authorize + callback)
-│   └── streaming.py     # SSE Preis-Stream
-├── services/
-│   ├── refresh.py       # Haupt-Refresh-Logic
-│   ├── ai_agent.py      # Gemini AI + Telegram Reports
-│   ├── telegram.py      # Telegram API
-│   ├── currency_converter.py
-│   └── scheduler.py     # Geplante Analysen
-├── scripts/
-│   ├── extract_parqet_tokens.py
-│   └── deploy_cloud_run.py
+│   ├── refresh.py       # Refresh + Status
+│   ├── analysis.py      # Analyse-Reports
+│   ├── analytics.py     # Erweiterte Analysen + Attribution
+│   ├── parqet_oauth.py  # OAuth2 PKCE
+│   ├── streaming.py     # SSE Preis-Stream
+│   └── telegram.py      # Telegram Webhook
 ├── static/
 │   ├── index.html       # Dashboard UI
 │   ├── app.js           # Frontend-Logic
 │   └── styles.css       # Styling
-└── tests/               # 223 Unit Tests
+└── tests/               # 227 pytest Tests
 ```
