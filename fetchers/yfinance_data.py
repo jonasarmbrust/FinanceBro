@@ -195,7 +195,50 @@ def _fetch_yf_sync(ticker_symbol: str):
     except Exception:
         pass
 
+    # --- 5. Earnings Surprise (Beat/Miss Rate) ---
+    try:
+        eh = ticker.earnings_history
+        if eh is not None and not eh.empty:
+            beats = 0
+            total = 0
+            surprises = []
+            for _, row in eh.iterrows():
+                estimate = row.get("epsEstimate")
+                actual = row.get("epsActual")
+                surprise_pct = row.get("surprisePercent")
+                if estimate is not None and actual is not None:
+                    total += 1
+                    if actual > estimate:
+                        beats += 1
+                    if surprise_pct is not None:
+                        import math
+                        if not math.isnan(float(surprise_pct)):
+                            surprises.append(float(surprise_pct))
+            if total > 0:
+                result.earnings_beat_rate = round(beats / total * 100, 1)
+            if surprises:
+                result.earnings_surprise_avg = round(
+                    sum(surprises) / len(surprises), 2
+                )
+    except Exception:
+        pass
+
+    # --- 6. Next Earnings Date ---
+    try:
+        ed = ticker.earnings_dates
+        if ed is not None and not ed.empty:
+            from datetime import datetime as dt
+            now = dt.now()
+            # Filter für zukünftige Termine
+            future = [d for d in ed.index if d.to_pydatetime().replace(tzinfo=None) > now]
+            if future:
+                next_date = min(future)
+                result.next_earnings_date = next_date.strftime("%Y-%m-%d")
+    except Exception:
+        pass
+
     return result
+
 
 
 async def quick_price_update(tickers: list[str]) -> tuple[dict[str, float], dict[str, float]]:

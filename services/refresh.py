@@ -177,15 +177,22 @@ async def _do_refresh():
         _set_progress("Berechne Rebalancing...", 60)
         rebalancing = calculate_rebalancing(positions, scores_dict, stocks=stocks)
 
-        # --- 4. Tech Picks (nur laden wenn kein Cache vorhanden — spart ~16 FMP-Calls) ---
+        # --- 4. Tech Picks via yFinance Screener (spart ~16 FMP-Calls) ---
         if is_demo:
             tech_picks = get_demo_tech_picks()
         elif portfolio_data.get("tech_picks"):
             tech_picks = portfolio_data["tech_picks"]
-            logger.info(f"📡 Tech Picks aus Cache: {len(tech_picks)} Empfehlungen")
+            logger.info(f"Tech Picks aus Cache: {len(tech_picks)} Empfehlungen")
         else:
             try:
-                tech_picks = await discover_tech_stocks(limit=8)
+                from fetchers.yfinance_screener import discover_stocks_yfinance
+                tech_picks = await discover_stocks_yfinance(limit=8)
+                if not tech_picks:
+                    # Fallback auf FMP wenn yFinance leer
+                    logger.info("yFinance Screener leer — FMP Fallback")
+                    tech_picks = await discover_tech_stocks(limit=8)
+                else:
+                    logger.info(f"yFinance Screener: {len(tech_picks)} Empfehlungen")
                 # AI-Analyse hinzufügen (optional, wenn Gemini konfiguriert)
                 if settings.gemini_configured and tech_picks:
                     try:
@@ -196,6 +203,7 @@ async def _do_refresh():
             except Exception as e:
                 logger.error(f"Tech Picks Fehler: {e}")
                 tech_picks = get_demo_tech_picks()
+
 
         # --- 5. Daily Changes + Preisanpassungen ---
         _set_progress("Lade Tagesänderungen...", 75)

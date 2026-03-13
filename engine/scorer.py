@@ -752,6 +752,18 @@ def _calc_growth_score(fd: FundamentalData, yf_data: Optional[YFinanceData] = No
         else:
             scores.append(15)
 
+    # Earnings Beat Rate (Konsistenz: wie oft Schätzungen geschlagen)
+    if yf_data and yf_data.earnings_beat_rate is not None:
+        beat = yf_data.earnings_beat_rate
+        if beat >= 80:      # 4/5+ Quartale geschlagen
+            scores.append(85)
+        elif beat >= 60:    # 3/5 geschlagen
+            scores.append(70)
+        elif beat >= 40:    # Gemischt
+            scores.append(50)
+        else:               # Meistens verfehlt
+            scores.append(30)
+
     if scores:
         return round(sum(scores) / len(scores), 1)
     return 50.0

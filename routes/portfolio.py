@@ -239,6 +239,36 @@ async def get_status():
     }
 
 
+@router.get("/api/earnings-calendar")
+async def get_earnings_calendar():
+    """Earnings-Kalender: Anstehende Earnings-Termine der Portfolio-Positionen."""
+    summary = portfolio_data.get("summary")
+    if not summary or not summary.stocks:
+        return {"earnings": [], "message": "Keine Portfolio-Daten"}
+
+    earnings = []
+    for stock in summary.stocks:
+        if stock.position.ticker == "CASH":
+            continue
+        if stock.yfinance and stock.yfinance.next_earnings_date:
+            entry = {
+                "ticker": stock.position.ticker,
+                "name": stock.position.name,
+                "date": stock.yfinance.next_earnings_date,
+                "beat_rate": stock.yfinance.earnings_beat_rate,
+                "surprise_avg": stock.yfinance.earnings_surprise_avg,
+            }
+            earnings.append(entry)
+
+    # Sortieren nach Datum (nächster zuerst)
+    earnings.sort(key=lambda x: x["date"])
+
+    return {
+        "earnings": earnings,
+        "count": len(earnings),
+    }
+
+
 def _is_ws_connected() -> bool:
     """Prüft ob yFinance WebSocket verbunden ist."""
     try:

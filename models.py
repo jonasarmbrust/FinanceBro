@@ -158,6 +158,10 @@ class YFinanceData(BaseModel):
     insider_sell_count: int = 0
     esg_risk_score: Optional[float] = None  # 0-100 (lower = better)
     earnings_growth_yoy: Optional[float] = None  # in %
+    # Earnings Surprise (neu)
+    earnings_beat_rate: Optional[float] = None      # 0-100%, z.B. 83.3 = 5/6 Quartale geschlagen
+    earnings_surprise_avg: Optional[float] = None   # Durchschn. Surprise in %, z.B. +5.2
+    next_earnings_date: Optional[str] = None        # Nächster Earnings-Termin (ISO)
 
 
 
