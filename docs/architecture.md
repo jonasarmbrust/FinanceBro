@@ -28,6 +28,7 @@ FinanzBro/
 │   ├── refresh.py          # Voller Refresh (mit Progress-Tracking)
 │   ├── data_loader.py      # Paralleles Batch-Loading (4er Batches)
 │   ├── currency_converter.py # Zentrale EUR-Konvertierung
+│   ├── portfolio_builder.py  # Parqet-Update + yFinance-Preise + calc_portfolio_totals()
 │   ├── ai_agent.py         # Gemini AI + Telegram Reports
 │   ├── telegram.py         # Telegram Bot API
 │   ├── telegram_bot.py     # Command-Router + Handler
@@ -36,7 +37,7 @@ FinanzBro/
 │   ├── score_commentary.py # AI Score-Kommentare (Flash)
 │   ├── weekly_digest.py    # Wöchentlicher Digest (Flash)
 │   ├── tech_radar_ai.py    # AI-gestützte Tech-Empfehlungen
-│   ├── trade_advisor.py    # AI Trade Advisor (Function Calling)
+│   ├── trade_advisor.py    # AI Trade Advisor (Function Calling + Structured Output + Chat)
 │   └── analyst_tracker.py  # Analysten Track Record Bewertung
 │
 ├── engine/
@@ -46,7 +47,8 @@ FinanzBro/
 │   ├── analytics.py        # Korrelation, Risiko, Dividenden
 │   ├── attribution.py      # P&L Attribution (Sektor, Herfindahl-Index)
 │   ├── history.py          # Portfolio-Snapshots → SQLite
-│   └── backtest.py         # Score-Backtest Engine
+│   ├── backtest.py         # Score-Backtest Engine
+│   └── sector_rotation.py  # Sektor-Rotation-Analyse (ETF-basiert)
 │
 ├── fetchers/
 │   ├── parqet.py           # Parqet Connect API (Performance + Activities)
@@ -58,6 +60,7 @@ FinanzBro/
 │   ├── technical.py        # RSI, SMA, MACD Berechnung
 │   ├── fear_greed.py       # CNN Fear & Greed Index
 │   ├── currency.py         # EUR/USD/DKK/GBP Wechselkurse
+│   ├── yfinance_screener.py # Tech-Aktien Screening (yfinance)
 │   └── demo_data.py        # Synthetische Demo-Daten
 │
 ├── static/                 # Frontend (HTML/JS/CSS)
@@ -127,6 +130,7 @@ graph LR
     F --> I[Pro + Search: Earnings]
     F --> J[Pro + Search: Risk]
     F --> K[Pro + Search: Chat]
+    F --> L[Pro + FC: Trade Advisor]
 ```
 
 ## Caching-Strategie

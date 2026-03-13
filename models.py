@@ -197,10 +197,6 @@ class ScoreBreakdown(BaseModel):
     momentum_score: float = 0.0       # 0-100 (3M/6M Kurs-Momentum) — 6%
     insider_score: float = 0.0        # 0-100 (Insider Buy/Sell) — 3%
     esg_score: float = 0.0            # 0-100 (ESG Risk) — 2%
-    # Legacy fields (kept for backwards compat, not used in v4)
-    fundamental_score: float = 0.0
-    price_target_score: float = 0.0
-    fmp_rating_score: float = 0.0
 
 
 class StockScore(BaseModel):

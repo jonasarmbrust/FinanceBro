@@ -120,14 +120,14 @@ def sample_scores():
     return {
         "AAPL": StockScore(
             ticker="AAPL", name="Apple", total_score=78.0, rating=Rating.BUY,
-            breakdown=ScoreBreakdown(analyst_score=80, fundamental_score=75),
+            breakdown=ScoreBreakdown(analyst_score=80, quality_score=75),
         ),
         "MSFT": StockScore(
             ticker="MSFT", name="Microsoft", total_score=55.0, rating=Rating.HOLD,
-            breakdown=ScoreBreakdown(analyst_score=60, fundamental_score=50),
+            breakdown=ScoreBreakdown(analyst_score=60, quality_score=50),
         ),
         "GOOGL": StockScore(
             ticker="GOOGL", name="Alphabet", total_score=35.0, rating=Rating.SELL,
-            breakdown=ScoreBreakdown(analyst_score=30, fundamental_score=40),
+            breakdown=ScoreBreakdown(analyst_score=30, quality_score=40),
         ),
     }

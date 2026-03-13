@@ -201,7 +201,8 @@ FinanzBro/
 │   ├── rebalancer.py    # Rebalancing-Empfehlungen
 │   ├── attribution.py   # P&L Attribution + Herfindahl-Index
 │   ├── history.py       # Portfolio-Snapshots → SQLite
-│   └── backtest.py      # Score-Backtest Engine
+│   ├── backtest.py      # Score-Backtest Engine
+│   └── sector_rotation.py # Sektor-Rotation-Analyse (ETF-basiert)
 ├── fetchers/
 │   ├── parqet.py        # Parqet Connect API (OAuth2 PKCE)
 │   ├── parqet_auth.py   # Token-Management
@@ -216,11 +217,12 @@ FinanzBro/
 ├── services/
 │   ├── refresh.py       # Haupt-Refresh (mit Progress-Tracking)
 │   ├── data_loader.py   # Paralleles Batch-Loading
+│   ├── portfolio_builder.py # Parqet-Update + yFinance-Preise + calc_portfolio_totals()
 │   ├── ai_agent.py      # Täglicher AI Telegram-Report
 │   ├── telegram.py      # Telegram API
 │   ├── telegram_bot.py  # Telegram Bot (Command-Handler)
 │   ├── vertex_ai.py     # Gemini Client + Context Caching
-│   ├── trade_advisor.py # AI Trade Advisor + Chat (Function Calling + Structured Output)
+│   ├── trade_advisor.py # AI Trade Advisor (Function Calling + Structured Output + Chat)
 │   ├── earnings_ai.py   # Earnings-Analyse (Structured Output)
 │   ├── score_commentary.py  # AI Score-Kommentare (Structured Output)
 │   ├── weekly_digest.py # Wöchentlicher Digest (Flash)

@@ -75,13 +75,13 @@ class TestScoreBreakdown:
     def test_defaults(self):
         bd = ScoreBreakdown()
         assert bd.analyst_score == 0.0
-        assert bd.fundamental_score == 0.0
-        assert bd.fmp_rating_score == 0.0
+        assert bd.quality_score == 0.0
+        assert bd.valuation_score == 0.0
 
     def test_custom(self):
-        bd = ScoreBreakdown(analyst_score=80, fundamental_score=70, ai_score=65)
+        bd = ScoreBreakdown(analyst_score=80, quality_score=70, growth_score=65)
         assert bd.analyst_score == 80
-        assert bd.fundamental_score == 70
+        assert bd.quality_score == 70
 
 
 class TestDividendInfo:

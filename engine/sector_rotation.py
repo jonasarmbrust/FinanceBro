@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 SECTOR_ETFS = {
     "Technology": "XLK",
     "Communication Services": "XLC",
-    "Healthcare": "XLY",
+    "Healthcare": "XLV",
     "Consumer Cyclical": "XLY",
     "Consumer Defensive": "XLP",
     "Industrials": "XLI",

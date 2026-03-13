@@ -8,6 +8,7 @@ Unterstützte Befehle:
   /news   — Freie Marktanalyse durch Gemini 2.5 Pro
   /earnings — Earnings-Analyse für Portfolio-Aktien
   /risk [szenario] — Risiko-Szenario-Analyse
+  /wissen — Tägliche Lern-Tipps & Projekt-Wissen
   /start  — Willkommensnachricht
   /help   — Befehlsübersicht
   (Freitext) — Portfolio-Chat mit KI
@@ -58,6 +59,8 @@ async def handle_update(update: dict) -> None:
     elif cmd == "/risk":
         scenario = " ".join(args) if args else None
         await _cmd_risk(chat_id, scenario)
+    elif cmd == "/wissen":
+        await _cmd_wissen(chat_id, args)
     elif cmd == "/attribution":
         await _cmd_attribution(chat_id)
     elif cmd == "/start":
@@ -89,6 +92,7 @@ async def _cmd_start(chat_id: str):
         "  /score AAPL — Score einer Aktie\n"
         "  /refresh — Daten aktualisieren\n"
         "  /news — Marktanalyse (Gemini Pro)\n"
+        "  /wissen — Lern-Tipps & Projekt-Wissen\n"
         "  /help — Befehlsübersicht\n",
         chat_id=chat_id,
     )
@@ -105,6 +109,7 @@ async def _cmd_help(chat_id: str):
         "  /earnings — Earnings-Analyse\n"
         "  /risk — Risiko-Szenarien\n"
         "  /news — Marktanalyse\n"
+        "  /wissen — Lern-Tipps & Projekt-Wissen\n"
         "  /refresh — Full Refresh starten\n"
         "  /help — Diese Übersicht\n\n"
         "💬 Oder einfach eine Frage schreiben!",
@@ -703,4 +708,109 @@ async def _cmd_risk(chat_id: str, scenario: Optional[str] = None):
     except Exception as e:
         logger.error(f"/risk fehlgeschlagen: {e}")
         await send_message(f"❌ Risiko-Analyse fehlgeschlagen: {e}", chat_id=chat_id)
+
+
+# ─────────────────────────────────────────────────────────────
+# Feature: /wissen — Lern-Tipps & Projekt-Wissen
+# ─────────────────────────────────────────────────────────────
+
+async def _cmd_wissen(chat_id: str, args: list[str]):
+    """Lern-Tipps und Projekt-Wissen.
+
+    Sub-Commands:
+      /wissen          → Tipp des Tages
+      /wissen quiz     → KI-generierte Quiz-Frage
+      /wissen PROJEKT  → Projekt-Zusammenfassung
+      /wissen alle     → Übersicht aller Projekte
+    """
+    from services.telegram import send_message
+    from services.knowledge_data import (
+        get_daily_tip,
+        get_project_summary,
+        get_projects_overview,
+    )
+
+    sub = args[0].lower() if args else ""
+
+    if sub == "quiz":
+        await _cmd_wissen_quiz(chat_id)
+    elif sub == "alle" or sub == "all":
+        await send_message(get_projects_overview(), chat_id=chat_id)
+    elif sub:
+        # Projekt-Zusammenfassung
+        summary = get_project_summary(sub)
+        await send_message(summary, chat_id=chat_id)
+    else:
+        # Tipp des Tages
+        tip = get_daily_tip()
+        header = f"🧠 *Wissen des Tages*\n_{tip['category']}_ • {tip['title']}\n\n"
+        await send_message(header + tip["text"], chat_id=chat_id)
+        logger.info(f"✅ /wissen: Tipp '{tip['title']}' gesendet")
+
+
+async def _cmd_wissen_quiz(chat_id: str):
+    """Generiert eine Quiz-Frage basierend auf Projekttechnologien via Gemini."""
+    import time as _time
+    from services.telegram import send_message
+
+    if not settings.gemini_configured:
+        await send_message(
+            "⚠️ Quiz benötigt Gemini API-Key.\n"
+            "Nutze `/wissen` für den Tipp des Tages (ohne Gemini).",
+            chat_id=chat_id,
+        )
+        return
+
+    # Rate Limiting (teilt sich den Cooldown mit /news)
+    now = _time.time()
+    recent = [t for t in _news_cooldown.get(chat_id, []) if now - t < 3600]
+    if len(recent) >= _MAX_NEWS_PER_HOUR:
+        await send_message(
+            "⏳ Rate-Limit erreicht. Bitte warte etwas.",
+            chat_id=chat_id,
+        )
+        return
+    _news_cooldown[chat_id] = recent + [now]
+
+    await send_message("🧠 Generiere Quiz-Frage...", chat_id=chat_id)
+
+    try:
+        from services.knowledge_data import get_all_technologies, PROJECT_KNOWLEDGE
+        from services.vertex_ai import get_client
+
+        client = get_client()
+        techs = get_all_technologies()
+        projects = ", ".join(
+            f"{p['name']} ({', '.join(p['technologies'][:5])})"
+            for p in PROJECT_KNOWLEDGE.values()
+        )
+
+        prompt = (
+            "Du bist ein freundlicher KI-Trainer. "
+            "Erstelle EINE Quiz-Frage über folgende Technologien und Projekte. "
+            "Die Frage soll für einen Programmier-Anfänger geeignet sein.\n\n"
+            f"Projekte: {projects}\n"
+            f"Technologien: {', '.join(techs[:20])}\n\n"
+            "Format (Plain Text, kein Markdown):\n"
+            "❓ [Frage]\n\n"
+            "A) [Option 1]\n"
+            "B) [Option 2]\n"
+            "C) [Option 3]\n\n"
+            "💡 Antwort: [Buchstabe]) [Erklärung in 1-2 Sätzen]\n\n"
+            "Halte die Frage kurz und praxisbezogen."
+        )
+
+        response = await client.aio.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+        )
+
+        result = response.text.strip() if response.text else "Quiz-Frage konnte nicht generiert werden."
+
+        await send_message(f"🧠 *Wissen-Quiz*\n\n{result}", chat_id=chat_id)
+        logger.info(f"✅ /wissen quiz ausgeführt ({len(result)} Zeichen)")
+
+    except Exception as e:
+        logger.error(f"/wissen quiz fehlgeschlagen: {e}")
+        await send_message(f"❌ Quiz fehlgeschlagen: {e}", chat_id=chat_id)
 

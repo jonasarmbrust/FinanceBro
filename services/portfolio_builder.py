@@ -20,6 +20,41 @@ from engine.history import save_snapshot
 logger = logging.getLogger(__name__)
 
 
+def calc_portfolio_totals(stocks: list) -> dict:
+    """Berechnet Portfolio-Gesamtwerte und tägliche Veränderung.
+
+    Zentraler Helper — vermeidet Code-Duplikation in refresh.py,
+    update_parqet() und update_yfinance_prices().
+
+    Returns:
+        Dict mit total_value, total_cost, total_pnl, total_pnl_pct,
+        daily_total_eur, daily_total_pct
+    """
+    total_value = sum(s.position.current_value for s in stocks)
+    total_cost = sum(s.position.total_cost for s in stocks)
+    total_pnl = total_value - total_cost
+    total_pnl_pct = (total_pnl / total_cost * 100) if total_cost > 0 else 0
+
+    daily_total_eur = 0.0
+    for s in stocks:
+        pct = s.position.daily_change_pct
+        if pct is not None and s.position.ticker != "CASH":
+            daily_total_eur += s.position.current_value * pct / (100 + pct)
+    daily_total_pct = (
+        (daily_total_eur / (total_value - daily_total_eur) * 100)
+        if (total_value - daily_total_eur) > 0 else 0
+    )
+
+    return {
+        "total_value": round(total_value, 2),
+        "total_cost": round(total_cost, 2),
+        "total_pnl": round(total_pnl, 2),
+        "total_pnl_pct": round(total_pnl_pct, 1),
+        "daily_total_eur": round(daily_total_eur, 2),
+        "daily_total_pct": round(daily_total_pct, 2),
+    }
+
+
 async def update_parqet() -> dict:
     """Parqet-only Update: Positionen, Cash, Stückzahl, Einkaufspreis.
 
@@ -82,25 +117,15 @@ async def update_parqet() -> dict:
                     stocks.append(StockFullData(position=pos))
 
             # 5. Calculate totals
-            total_value = sum(s.position.current_value for s in stocks)
-            total_cost = sum(s.position.total_cost for s in stocks)
-            total_pnl = total_value - total_cost
-            total_pnl_pct = (total_pnl / total_cost * 100) if total_cost > 0 else 0
-
-            # Daily change (aus vorherigen Daten beibehalten)
-            daily_total_eur = sum(
-                s.position.current_value * (s.position.daily_change_pct or 0) / (100 + (s.position.daily_change_pct or 0))
-                for s in stocks if s.position.ticker != "CASH" and s.position.daily_change_pct is not None
-            )
-            daily_total_pct = (daily_total_eur / (total_value - daily_total_eur) * 100) if (total_value - daily_total_eur) > 0 else 0
+            t = calc_portfolio_totals(stocks)
 
             # 6. Build summary
             prev_scores = [s.score for s in stocks if s.score]
             summary = PortfolioSummary(
-                total_value=round(total_value, 2),
-                total_cost=round(total_cost, 2),
-                total_pnl=round(total_pnl, 2),
-                total_pnl_percent=round(total_pnl_pct, 1),
+                total_value=t["total_value"],
+                total_cost=t["total_cost"],
+                total_pnl=t["total_pnl"],
+                total_pnl_percent=t["total_pnl_pct"],
                 num_positions=len(stocks),
                 stocks=stocks,
                 scores=prev_scores,
@@ -109,8 +134,8 @@ async def update_parqet() -> dict:
                 fear_greed=prev_summary.fear_greed if prev_summary else None,
                 eur_usd_rate=eur_usd_rate,
                 display_currency="EUR",
-                daily_total_change=round(daily_total_eur, 2),
-                daily_total_change_pct=round(daily_total_pct, 2),
+                daily_total_change=t["daily_total_eur"],
+                daily_total_change_pct=t["daily_total_pct"],
             )
 
             portfolio_data["summary"] = summary
@@ -154,8 +179,6 @@ async def update_yfinance_prices() -> dict:
         return {"status": "no_portfolio"}
 
     try:
-        import sys
-        print(f"[YF-DEBUG] Starting yFinance price update, {len(summary.stocks)} stocks", flush=True, file=sys.stderr)
         logger.info("📈 yFinance Kurs-Update gestartet...")
 
         # Wechselkurse laden
@@ -165,14 +188,11 @@ async def update_yfinance_prices() -> dict:
         stock_tickers = [s.position.ticker for s in summary.stocks if s.position.ticker != "CASH"]
         ticker_to_yf = {t: YFINANCE_ALIASES.get(t, t) for t in stock_tickers}
         yf_tickers = list(set(ticker_to_yf.values()))
-        print(f"[YF-DEBUG] yf_tickers={yf_tickers[:5]}... ({len(yf_tickers)} total)", flush=True, file=sys.stderr)
+        logger.debug(f"yf_tickers={yf_tickers[:5]}... ({len(yf_tickers)} total)")
 
         # 1. Batch-Download: Preise + Daily Changes
         prices_raw, daily_raw = await quick_price_update(yf_tickers) if yf_tickers else ({}, {})
-        print(f"[YF-DEBUG] prices_raw={len(prices_raw)} daily_raw={len(daily_raw)}", flush=True, file=sys.stderr)
-        if daily_raw:
-            sample = list(daily_raw.items())[:3]
-            print(f"[YF-DEBUG] daily sample: {sample}", flush=True, file=sys.stderr)
+        logger.debug(f"prices_raw={len(prices_raw)} daily_raw={len(daily_raw)}")
 
         # Map zurück auf Original-Ticker
         prices = {}
@@ -182,7 +202,7 @@ async def update_yfinance_prices() -> dict:
                 prices[orig] = prices_raw[yf_t]
             if yf_t in daily_raw:
                 daily_changes[orig] = daily_raw[yf_t]
-        print(f"[YF-DEBUG] mapped prices={len(prices)} daily={len(daily_changes)}", flush=True, file=sys.stderr)
+        logger.debug(f"mapped prices={len(prices)} daily={len(daily_changes)}")
 
         # 2. ISIN-basierte Ticker Fallback
         isin_positions = [s.position for s in summary.stocks
@@ -218,20 +238,13 @@ async def update_yfinance_prices() -> dict:
             total_cost += pos.total_cost
 
         # 4. Summary-Werte aktualisieren
-        summary.total_value = round(total_value, 2)
-        summary.total_cost = round(total_cost, 2)
-        total_pnl = total_value - total_cost
-        summary.total_pnl = round(total_pnl, 2)
-        summary.total_pnl_percent = round((total_pnl / total_cost * 100) if total_cost > 0 else 0, 1)
-
-        # Daily total change
-        daily_total_eur = sum(
-            s.position.current_value * (s.position.daily_change_pct or 0) / (100 + (s.position.daily_change_pct or 0))
-            for s in summary.stocks if s.position.ticker != "CASH" and s.position.daily_change_pct is not None
-        )
-        daily_total_pct = (daily_total_eur / (total_value - daily_total_eur) * 100) if (total_value - daily_total_eur) > 0 else 0
-        summary.daily_total_change = round(daily_total_eur, 2)
-        summary.daily_total_change_pct = round(daily_total_pct, 2)
+        t = calc_portfolio_totals(list(summary.stocks))
+        summary.total_value = t["total_value"]
+        summary.total_cost = t["total_cost"]
+        summary.total_pnl = t["total_pnl"]
+        summary.total_pnl_percent = t["total_pnl_pct"]
+        summary.daily_total_change = t["daily_total_eur"]
+        summary.daily_total_change_pct = t["daily_total_pct"]
         summary.last_updated = datetime.now(tz=TZ_BERLIN)
 
         logger.info(

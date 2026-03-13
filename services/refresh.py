@@ -33,6 +33,7 @@ from engine.scorer import calculate_score
 from engine.rebalancer import calculate_rebalancing
 from engine.history import save_snapshot
 from engine.analysis import build_analysis_report
+from services.portfolio_builder import calc_portfolio_totals
 
 logger = logging.getLogger(__name__)
 
@@ -258,25 +259,13 @@ async def _do_refresh():
 
         # --- 6. Build Summary (alle Werte jetzt in EUR) ---
         _set_progress("Erstelle Zusammenfassung...", 85)
-        total_value = sum(s.position.current_value for s in stocks)
-        total_cost = sum(s.position.total_cost for s in stocks)
-        total_pnl = total_value - total_cost
-        total_pnl_pct = (total_pnl / total_cost * 100) if total_cost > 0 else 0
-
-        # Berechne tägliche Gesamtveränderung
-        daily_total_eur = 0.0
-        for s in stocks:
-            pct = s.position.daily_change_pct
-            if pct is not None and s.position.ticker != "CASH":
-                # daily EUR change = current_value * pct / (100 + pct)
-                daily_total_eur += s.position.current_value * pct / (100 + pct)
-        daily_total_pct = (daily_total_eur / (total_value - daily_total_eur) * 100) if (total_value - daily_total_eur) > 0 else 0
+        t = calc_portfolio_totals(stocks)
 
         summary = PortfolioSummary(
-            total_value=round(total_value, 2),
-            total_cost=round(total_cost, 2),
-            total_pnl=round(total_pnl, 2),
-            total_pnl_percent=round(total_pnl_pct, 1),
+            total_value=t["total_value"],
+            total_cost=t["total_cost"],
+            total_pnl=t["total_pnl"],
+            total_pnl_percent=t["total_pnl_pct"],
             num_positions=len(stocks),
             stocks=stocks,
             scores=[s.score for s in stocks if s.score],
@@ -285,8 +274,8 @@ async def _do_refresh():
             fear_greed=fear_greed_data,
             is_demo=is_demo,
             eur_usd_rate=eur_usd_rate,
-            daily_total_change=round(daily_total_eur, 2),
-            daily_total_change_pct=round(daily_total_pct, 2),
+            daily_total_change=t["daily_total_eur"],
+            daily_total_change_pct=t["daily_total_pct"],
         )
 
         portfolio_data["summary"] = summary
@@ -310,9 +299,9 @@ async def _do_refresh():
         # Save daily portfolio snapshot
         try:
             save_snapshot(
-                total_value=total_value,
-                total_cost=total_cost,
-                total_pnl=total_pnl,
+                total_value=t["total_value"],
+                total_cost=t["total_cost"],
+                total_pnl=t["total_pnl"],
                 num_positions=len(stocks),
                 eur_usd_rate=eur_usd_rate,
             )
@@ -320,14 +309,14 @@ async def _do_refresh():
             logger.warning(f"Snapshot-Speicherung fehlgeschlagen: {e}")
 
         _set_progress("Erstelle Analyse-Report...", 90)
-        logger.info(f"✅ Refresh abgeschlossen: {len(stocks)} Positionen, Wert: €{total_value:,.2f}")
+        logger.info(f"✅ Refresh abgeschlossen: {len(stocks)} Positionen, Wert: €{t['total_value']:,.2f}")
 
         # Analyse-Report generieren
         try:
             report = build_analysis_report(
                 stocks_with_scores=stocks,
                 analysis_level="full",
-                total_portfolio_value=total_value,
+                total_portfolio_value=t["total_value"],
             )
             portfolio_data["last_analysis"] = report
             logger.info(f"📊 Analyse-Report: Portfolio-Score {report.portfolio_score:.1f} ({report.portfolio_rating.value.upper()})")
@@ -469,15 +458,9 @@ async def _quick_price_refresh():
             eur_usd_override=summary.eur_usd_rate if summary.eur_usd_rate > 0 else None
         )
 
-        total_value = 0.0
-        total_cost = 0.0
-
         for stock in summary.stocks:
             ticker = stock.position.ticker
             if ticker == "CASH":
-                # Cash-Position nicht aktualisieren
-                total_value += stock.position.current_value
-                total_cost += stock.position.total_cost
                 continue
 
             if ticker in prices:
@@ -491,25 +474,14 @@ async def _quick_price_refresh():
                 stock.position.daily_change_pct = daily_changes[ticker]
                 daily_updated += 1
 
-            total_value += stock.position.current_value
-            total_cost += stock.position.total_cost
-
         # Update summary totals
-        summary.total_value = round(total_value, 2)
-        summary.total_cost = round(total_cost, 2)
-        total_pnl = total_value - total_cost
-        summary.total_pnl = round(total_pnl, 2)
-        summary.total_pnl_percent = round((total_pnl / total_cost * 100) if total_cost > 0 else 0, 1)
-
-        # Daily total change aktualisieren
-        daily_total_eur = 0.0
-        for s in summary.stocks:
-            pct = s.position.daily_change_pct
-            if pct is not None and s.position.ticker != "CASH":
-                daily_total_eur += s.position.current_value * pct / (100 + pct)
-        daily_total_pct = (daily_total_eur / (total_value - daily_total_eur) * 100) if (total_value - daily_total_eur) > 0 else 0
-        summary.daily_total_change = round(daily_total_eur, 2)
-        summary.daily_total_change_pct = round(daily_total_pct, 2)
+        t = calc_portfolio_totals(list(summary.stocks))
+        summary.total_value = t["total_value"]
+        summary.total_cost = t["total_cost"]
+        summary.total_pnl = t["total_pnl"]
+        summary.total_pnl_percent = t["total_pnl_pct"]
+        summary.daily_total_change = t["daily_total_eur"]
+        summary.daily_total_change_pct = t["daily_total_pct"]
         summary.last_updated = datetime.now(tz=TZ_BERLIN)
 
         yf_batch_count = updated - yf_ws_count
@@ -517,15 +489,15 @@ async def _quick_price_refresh():
             f"⚡ Quick-Update: {updated}/{len(tickers)} Kurse aktualisiert "
             f"(yfinance-WS: {yf_ws_count}, yfinance-Batch: {yf_batch_count}), "
             f"{daily_updated} Daily Changes, "
-            f"Wert: €{total_value:,.2f}"
+            f"Wert: €{t['total_value']:,.2f}"
         )
 
         # Save snapshot
         try:
             save_snapshot(
-                total_value=total_value,
-                total_cost=total_cost,
-                total_pnl=total_pnl,
+                total_value=t["total_value"],
+                total_cost=t["total_cost"],
+                total_pnl=t["total_pnl"],
                 num_positions=len(summary.stocks),
                 eur_usd_rate=summary.eur_usd_rate,
             )

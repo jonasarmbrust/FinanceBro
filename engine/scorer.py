@@ -168,7 +168,6 @@ def calculate_score(
     # --- 1. Quality Score (20%) ---
     if fundamentals and _has_fundamental_data(fundamentals):
         breakdown.quality_score = _calc_quality_score(fundamentals)
-        breakdown.fundamental_score = breakdown.quality_score  # Legacy compat
         available_weight += WEIGHTS["quality"]
         calculated_factors.add("quality")
 

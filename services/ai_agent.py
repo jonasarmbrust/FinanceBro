@@ -238,6 +238,22 @@ def _build_telegram_report(
                 sections.append(f"  🔴 {a.ticker}: {a.amount_eur:.0f} EUR ({a.shares_delta:+.2f} Stk)")
             sections.append("")
 
+    # ── Wissen des Tages ──
+    try:
+        from services.knowledge_data import get_daily_tip
+        tip = get_daily_tip()
+        sections.append(f"🧠 *Wissen des Tages*  _{tip['category']}_")
+        sections.append(f"*{tip['title']}*")
+        # Kurzversion für den Daily Report (erste 200 Zeichen des Tipps)
+        tip_text = tip["text"].replace("*", "").replace("_", "")
+        if len(tip_text) > 200:
+            tip_text = tip_text[:200].rsplit(" ", 1)[0] + "..."
+        sections.append(tip_text)
+        sections.append("→ `/wissen` für den vollen Tipp")
+        sections.append("")
+    except Exception:
+        pass
+
     # Footer
     sections.append("─" * 30)
     sections.append("_FinanzBro AI Agent • Automatisch generiert_")
