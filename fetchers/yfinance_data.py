@@ -403,10 +403,14 @@ def _safe_stmt_val(df, key: str, col: int = 0):
     return None
 
 
-def _calc_altman_z(ticker) -> float | None:
+def _calc_altman_z(ticker, info: dict = None) -> float | None:
     """Berechnet Altman Z-Score aus yfinance Financial Statements.
 
     Z = 1.2×(WC/TA) + 1.4×(RE/TA) + 3.3×(EBIT/TA) + 0.6×(MC/TL) + 1.0×(Rev/TA)
+
+    Args:
+        ticker: yfinance Ticker object
+        info: Pre-loaded ticker.info dict (vermeidet Extra-Request)
 
     Returns:
         Z-Score als float oder None bei fehlenden Daten.
@@ -414,7 +418,8 @@ def _calc_altman_z(ticker) -> float | None:
     try:
         bs = ticker.balance_sheet
         inc = ticker.income_stmt
-        info = ticker.info or {}
+        if info is None:
+            info = ticker.info or {}
 
         if bs is None or bs.empty or inc is None or inc.empty:
             return None
@@ -639,10 +644,9 @@ async def fetch_yfinance_fundamentals(ticker_symbol: str) -> dict:
             if fcf and mcap and mcap > 0:
                 fd.free_cashflow_yield = round(fcf / mcap, 4)
 
-            # ROIC aus yf nicht direkt verfuegbar, aber ROE ist schon da
-
             # --- Quantitative Scores (Altman Z + Piotroski) ---
-            fd.altman_z_score = _calc_altman_z(ticker)
+            # Nutzt balance_sheet/income_stmt/cashflow + bereits geladenes info
+            fd.altman_z_score = _calc_altman_z(ticker, info)
             fd.piotroski_score = _calc_piotroski(ticker)
 
             # --- Analyst ---
