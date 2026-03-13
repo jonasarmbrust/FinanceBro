@@ -58,40 +58,58 @@ async def get_market_indices():
 
     try:
         import yfinance as yf
+        from datetime import datetime as dt
+        import math
+
         for idx in indices:
             try:
-                t = yf.Ticker(idx["symbol"])
-                info = t.fast_info
-                price = getattr(info, "last_price", None)
-                prev_close = getattr(info, "previous_close", None)
-
-                if price and prev_close and prev_close > 0:
-                    change = price - prev_close
-                    change_pct = (change / prev_close) * 100
-                    results.append({
-                        "name": idx["name"],
-                        "symbol": idx["symbol"],
-                        "price": round(price, 2),
-                        "change": round(change, 2),
-                        "change_pct": round(change_pct, 2),
-                    })
-                else:
-                    # Fallback: 2-Tage-Historie
-                    hist = t.history(period="2d")
-                    if hist is not None and len(hist) >= 2:
-                        prev = float(hist["Close"].iloc[-2])
-                        curr = float(hist["Close"].iloc[-1])
-                        change = curr - prev
-                        change_pct = (change / prev) * 100 if prev > 0 else 0
-                        results.append({
-                            "name": idx["name"],
-                            "symbol": idx["symbol"],
-                            "price": round(curr, 2),
-                            "change": round(change, 2),
-                            "change_pct": round(change_pct, 2),
-                        })
+                # Use robust method: 5d history with 1h interval and pre/post market
+                hist = yf.download(
+                    tickers=idx["symbol"],
+                    period="5d",
+                    interval="1h",
+                    prepost=True,
+                    progress=False
+                )
+                
+                if hist is not None and not hist.empty and "Close" in hist.columns:
+                    col = hist["Close"]
+                    
+                    # Handle MultiIndex if present
+                    if hasattr(col, 'nlevels') and col.nlevels > 1:
+                        if idx["symbol"] in col.columns:
+                            col = col[idx["symbol"]]
+                        else:
+                            # Squeeze it
+                            col = col.squeeze()
+                            
+                    col = col.dropna()
+                    if len(col) >= 1:
+                        curr = float(col.iloc[-1].item() if hasattr(col.iloc[-1], 'item') else col.iloc[-1])
+                        
+                        last_date = col.index[-1].date()
+                        today = dt.now().date()
+                        
+                        if last_date >= today and len(col) >= 2:
+                            prev = float(col.iloc[-2].item() if hasattr(col.iloc[-2], 'item') else col.iloc[-2])
+                        else:
+                            prev = float(col.iloc[-1].item() if hasattr(col.iloc[-1], 'item') else col.iloc[-1])
+                            
+                        if prev > 0 and not math.isnan(prev) and curr > 0 and not math.isnan(curr):
+                            change = curr - prev
+                            change_pct = (change / prev) * 100
+                            results.append({
+                                "name": idx["name"],
+                                "symbol": idx["symbol"],
+                                "price": round(curr, 2),
+                                "change": round(change, 2),
+                                "change_pct": round(change_pct, 2),
+                            })
+                            continue
+                            
+                logger.warning(f"Index {idx['name']} konnte nicht via History berechnet werden")
             except Exception as e:
-                logger.warning(f"Index {idx['name']} nicht verfügbar: {e}")
+                logger.warning(f"Index {idx['name']} fehlgeschlagen: {e}")
     except Exception as e:
         logger.error(f"Market-Indices fehlgeschlagen: {e}")
 
