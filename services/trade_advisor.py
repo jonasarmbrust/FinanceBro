@@ -674,7 +674,6 @@ async def _call_gemini_chat(
 
     config = {
         "tools": [
-            Tool(google_search=GoogleSearch()),
             Tool(function_declarations=tool_declarations),
         ],
         "system_instruction": system_prompt,

@@ -388,6 +388,179 @@ async def quick_price_update(tickers: list[str]) -> tuple[dict[str, float], dict
         return {}, {}
 
 
+def _safe_stmt_val(df, key: str, col: int = 0):
+    """Sichere Extraktion eines Werts aus yfinance Financial Statement DataFrame."""
+    if df is None or df.empty:
+        return None
+    if key not in df.index:
+        return None
+    try:
+        val = df.loc[key].iloc[col]
+        if val is not None and not (isinstance(val, float) and __import__('math').isnan(val)):
+            return float(val)
+    except (IndexError, ValueError, TypeError):
+        pass
+    return None
+
+
+def _calc_altman_z(ticker) -> float | None:
+    """Berechnet Altman Z-Score aus yfinance Financial Statements.
+
+    Z = 1.2×(WC/TA) + 1.4×(RE/TA) + 3.3×(EBIT/TA) + 0.6×(MC/TL) + 1.0×(Rev/TA)
+
+    Returns:
+        Z-Score als float oder None bei fehlenden Daten.
+    """
+    try:
+        bs = ticker.balance_sheet
+        inc = ticker.income_stmt
+        info = ticker.info or {}
+
+        if bs is None or bs.empty or inc is None or inc.empty:
+            return None
+
+        total_assets = _safe_stmt_val(bs, "Total Assets")
+        if not total_assets or total_assets <= 0:
+            return None
+
+        working_capital = _safe_stmt_val(bs, "Working Capital")
+        retained_earnings = _safe_stmt_val(bs, "Retained Earnings")
+        ebit = _safe_stmt_val(inc, "EBIT")
+        total_revenue = _safe_stmt_val(inc, "Total Revenue")
+        total_liabilities = _safe_stmt_val(bs, "Total Liabilities Net Minority Interest")
+        market_cap = info.get("marketCap")
+
+        # Mindestens 3 von 5 Faktoren muessen vorhanden sein
+        available = sum(1 for v in [working_capital, retained_earnings, ebit, total_revenue, market_cap] if v is not None)
+        if available < 3:
+            return None
+
+        z = 0.0
+        if working_capital is not None:
+            z += 1.2 * (working_capital / total_assets)
+        if retained_earnings is not None:
+            z += 1.4 * (retained_earnings / total_assets)
+        if ebit is not None:
+            z += 3.3 * (ebit / total_assets)
+        if market_cap is not None and total_liabilities and total_liabilities > 0:
+            z += 0.6 * (market_cap / total_liabilities)
+        if total_revenue is not None:
+            z += 1.0 * (total_revenue / total_assets)
+
+        return round(z, 2)
+    except Exception:
+        return None
+
+
+def _calc_piotroski(ticker) -> int | None:
+    """Berechnet Piotroski F-Score (0-9) aus yfinance Financial Statements.
+
+    9 binaere Kriterien: Profitabilitaet (4), Verschuldung (3), Effizienz (2).
+
+    Returns:
+        F-Score (0-9) als int oder None bei fehlenden Daten.
+    """
+    try:
+        bs = ticker.balance_sheet
+        inc = ticker.income_stmt
+        cf = ticker.cashflow
+
+        if bs is None or bs.empty or inc is None or inc.empty or cf is None or cf.empty:
+            return None
+        if bs.shape[1] < 2 or inc.shape[1] < 2:
+            return None  # Brauchen mind. 2 Jahre fuer Vergleiche
+
+        ta = _safe_stmt_val(bs, "Total Assets")
+        ta_prev = _safe_stmt_val(bs, "Total Assets", 1)
+        if not ta or ta <= 0:
+            return None
+
+        score = 0
+        criteria_available = 0
+
+        # --- Profitabilitaet ---
+        # 1. ROA > 0
+        net_income = _safe_stmt_val(inc, "Net Income")
+        if net_income is not None:
+            criteria_available += 1
+            if net_income > 0:
+                score += 1
+
+        # 2. Operating Cashflow > 0
+        ocf = _safe_stmt_val(cf, "Operating Cash Flow")
+        if ocf is not None:
+            criteria_available += 1
+            if ocf > 0:
+                score += 1
+
+        # 3. ROA steigend (Net Income / Total Assets)
+        net_income_prev = _safe_stmt_val(inc, "Net Income", 1)
+        if net_income is not None and net_income_prev is not None and ta_prev and ta_prev > 0:
+            criteria_available += 1
+            roa_curr = net_income / ta
+            roa_prev = net_income_prev / ta_prev
+            if roa_curr > roa_prev:
+                score += 1
+
+        # 4. Accruals: OCF > Net Income (Cashflow-Qualitaet)
+        if ocf is not None and net_income is not None:
+            criteria_available += 1
+            if ocf > net_income:
+                score += 1
+
+        # --- Verschuldung ---
+        # 5. Long-term Debt sinkend
+        ltd = _safe_stmt_val(bs, "Long Term Debt")
+        ltd_prev = _safe_stmt_val(bs, "Long Term Debt", 1)
+        if ltd is not None and ltd_prev is not None:
+            criteria_available += 1
+            if ltd <= ltd_prev:
+                score += 1
+
+        # 6. Current Ratio steigend
+        cl = _safe_stmt_val(bs, "Current Liabilities")
+        cl_prev = _safe_stmt_val(bs, "Current Liabilities", 1)
+        ca = _safe_stmt_val(bs, "Current Assets")
+        ca_prev = _safe_stmt_val(bs, "Current Assets", 1)
+        if cl and cl > 0 and cl_prev and cl_prev > 0 and ca and ca_prev:
+            criteria_available += 1
+            if (ca / cl) > (ca_prev / cl_prev):
+                score += 1
+
+        # 7. Keine Verwaesserung (Aktienanzahl nicht gestiegen)
+        shares = _safe_stmt_val(bs, "Share Issued")
+        shares_prev = _safe_stmt_val(bs, "Share Issued", 1)
+        if shares is not None and shares_prev is not None:
+            criteria_available += 1
+            if shares <= shares_prev:
+                score += 1
+
+        # --- Effizienz ---
+        # 8. Gross Margin steigend
+        gp = _safe_stmt_val(inc, "Gross Profit")
+        gp_prev = _safe_stmt_val(inc, "Gross Profit", 1)
+        rev = _safe_stmt_val(inc, "Total Revenue")
+        rev_prev = _safe_stmt_val(inc, "Total Revenue", 1)
+        if gp and rev and rev > 0 and gp_prev and rev_prev and rev_prev > 0:
+            criteria_available += 1
+            if (gp / rev) > (gp_prev / rev_prev):
+                score += 1
+
+        # 9. Asset Turnover steigend (Revenue / Total Assets)
+        if rev and ta and ta > 0 and rev_prev and ta_prev and ta_prev > 0:
+            criteria_available += 1
+            if (rev / ta) > (rev_prev / ta_prev):
+                score += 1
+
+        # Mindestens 5 von 9 Kriterien muessen auswertbar sein
+        if criteria_available < 5:
+            return None
+
+        return score
+    except Exception:
+        return None
+
+
 async def fetch_yfinance_fundamentals(ticker_symbol: str) -> dict:
     """Holt Fundamentaldaten von yfinance als Fallback fuer FMP.
 
@@ -467,6 +640,10 @@ async def fetch_yfinance_fundamentals(ticker_symbol: str) -> dict:
                 fd.free_cashflow_yield = round(fcf / mcap, 4)
 
             # ROIC aus yf nicht direkt verfuegbar, aber ROE ist schon da
+
+            # --- Quantitative Scores (Altman Z + Piotroski) ---
+            fd.altman_z_score = _calc_altman_z(ticker)
+            fd.piotroski_score = _calc_piotroski(ticker)
 
             # --- Analyst ---
             ad = AnalystData()
