@@ -25,6 +25,7 @@ FastAPI Backend (lokal / Cloud Run)
 | **FMP** | `fetchers/fmp.py` | `FMP_API_KEY` | Fundamentals, Analysten, Dividenden, News, Earnings |
 | **yfinance** | `fetchers/yfinance_data.py` | – | Kurse, Historische Daten, Market-Cap, Beta, Indizes |
 | **Finnhub** | `fetchers/finnhub_ws.py` | `FINNHUB_API_KEY` | Echtzeit-Kurse (WebSocket, nur US) |
+| **yFinance WS** | `fetchers/yfinance_ws.py` | – | Echtzeit-Kurse (WebSocket, International/EU) |
 | **CNN** | `fetchers/fear_greed.py` | – | Fear & Greed Index |
 | **Vertex AI** | `services/vertex_ai.py` | GCP Service Account | Gemini Pro/Flash, Search Grounding |
 
@@ -144,11 +145,9 @@ pip install -r requirements.txt
 python main.py  # → http://localhost:8000
 ```
 
-### Cloud Run
-```bash
-gcloud run deploy finanzbro --source . \
-  --region europe-west1 \
-  --update-env-vars ENVIRONMENT=production,GCP_PROJECT_ID=job-automation-jonas
+### Cloud Run (Windows)
+```powershell
+gcloud.cmd run deploy finanzbro --source . --region europe-west1 --allow-unauthenticated --memory 512Mi --timeout 300 --update-env-vars ENVIRONMENT=production,GCP_PROJECT_ID=job-automation-jonas
 ```
 
 ### Environment (.env)
@@ -201,7 +200,8 @@ FinanzBro/
 │   ├── parqet_auth.py   # Token-Management
 │   ├── fmp.py           # Financial Modeling Prep
 │   ├── yfinance_data.py # Yahoo Finance (Batch)
-│   ├── finnhub_ws.py    # Finnhub WebSocket
+│   ├── yfinance_ws.py   # yFinance WebSocket (Echtzeit International)
+│   ├── finnhub_ws.py    # Finnhub WebSocket (Echtzeit US)
 │   ├── technical.py     # RSI, SMA, MACD
 │   ├── fear_greed.py    # CNN Fear & Greed
 │   ├── currency.py      # Wechselkurse
@@ -232,5 +232,5 @@ FinanzBro/
 │   ├── index.html       # Dashboard UI
 │   ├── app.js           # Frontend-Logic
 │   └── styles.css       # Styling
-└── tests/               # 253 pytest Tests
+└── tests/               # 300+ pytest Tests
 ```

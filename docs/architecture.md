@@ -36,6 +36,7 @@ FinanzBro/
 │   ├── score_commentary.py # AI Score-Kommentare (Flash)
 │   ├── weekly_digest.py    # Wöchentlicher Digest (Flash)
 │   ├── tech_radar_ai.py    # AI-gestützte Tech-Empfehlungen
+│   ├── trade_advisor.py    # AI Trade Advisor (Function Calling)
 │   └── analyst_tracker.py  # Analysten Track Record Bewertung
 │
 ├── engine/
@@ -60,7 +61,7 @@ FinanzBro/
 │   └── demo_data.py        # Synthetische Demo-Daten
 │
 ├── static/                 # Frontend (HTML/JS/CSS)
-└── tests/                  # 113 pytest Tests
+└── tests/                  # 300+ pytest Tests
 ```
 
 ## Stabilität & Concurrency
