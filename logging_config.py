@@ -55,7 +55,12 @@ def setup_logging(environment: str = "development"):
         ],
     )
 
-    handler = logging.StreamHandler(sys.stdout)
+    # Unicode-safe Stream: auf Windows cp1252 würden Emojis crashen
+    # → 'replace' encoding-errors statt UnicodeEncodeError
+    stream = open(sys.stdout.fileno(), mode='w', encoding='utf-8',
+                  errors='replace', closefd=False)
+
+    handler = logging.StreamHandler(stream)
     handler.setFormatter(formatter)
 
     root = logging.getLogger()
