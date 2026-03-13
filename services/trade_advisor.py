@@ -426,7 +426,6 @@ async def _call_gemini_with_tools(
         "Du hast Zugriff auf Tools um Portfolio-Daten und Aktien-Scores abzurufen. "
         "Du kannst auch externe URLs lesen mit dem fetch_url_content Tool — "
         "nutze es wenn der User Links teilt oder wenn du Artikel lesen möchtest. "
-        "Nutze auch Google Search für aktuelle Marktdaten und Nachrichten. "
         "Antworte auf Deutsch."
     )
 
@@ -449,10 +448,9 @@ async def _call_gemini_with_tools(
         FunctionDeclaration(**td) for td in _build_tool_declarations()
     ]
 
-    # Config: Google Search + eigene Tools
+    # Config: eigene Tools (GoogleSearch kann nicht mit function_declarations kombiniert werden)
     config = {
         "tools": [
-            Tool(google_search=GoogleSearch()),
             Tool(function_declarations=tool_declarations),
         ],
         "response_mime_type": "application/json",
@@ -688,7 +686,6 @@ async def _call_gemini_chat(
         "REGELN:\n"
         "- Antworte auf Deutsch, klar und direkt\n"
         "- Nutze die verfügbaren Tools um aktuelle Daten abzurufen wenn nötig\n"
-        "- Nutze Google Search für aktuelle Nachrichten und Marktdaten\n"
         "- Wenn der User URLs teilt, nutze das fetch_url_content Tool um den Inhalt zu lesen\n"
         "- Beziehe dich auf das Portfolio wenn relevant\n"
         "- Sei ehrlich über Unsicherheiten und Risiken\n"
@@ -702,7 +699,6 @@ async def _call_gemini_chat(
 
     config = {
         "tools": [
-            Tool(google_search=GoogleSearch()),
             Tool(function_declarations=tool_declarations),
         ],
         "system_instruction": system_prompt,
