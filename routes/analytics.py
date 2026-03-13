@@ -510,3 +510,62 @@ async def get_attribution():
     from engine.attribution import calculate_attribution
     return calculate_attribution(summary.stocks, activities)
 
+
+# ─────────────────────────────────────────────────────────────
+# #16: Portfolio History Detail (Stacked Area Chart)
+# ─────────────────────────────────────────────────────────────
+
+@router.get("/api/portfolio/history-detail")
+async def get_portfolio_history_detail(period: str = "6month"):
+    """Historische Portfolio-Werte pro Aktie + Gesamt für Stacked Area Chart.
+
+    Nutzt SQLite-Cache für bereits geladene Kurse (inkrementell).
+    """
+    period_map = {
+        "1month": 30, "3month": 90, "6month": 180,
+        "1year": 365, "max": 9999,
+    }
+    days = period_map.get(period, 180)
+
+    cache_key = f"history_detail_{period}"
+    cached = _get_cached(cache_key)
+    if cached is not None:
+        return cached
+
+    # Activities laden
+    activities = portfolio_data.get("activities")
+    if not activities:
+        try:
+            from fetchers.parqet import fetch_portfolio_activities_raw
+            activities = await fetch_portfolio_activities_raw()
+        except Exception:
+            pass
+
+    if not activities:
+        return JSONResponse({"error": "Keine Activities verfügbar"}, status_code=503)
+
+    # Raw Activities für Cash-Rekonstruktion laden (inkl. Cash-Einträge)
+    raw_activities = None
+    try:
+        import json
+        from pathlib import Path
+        raw_cache = Path(settings.CACHE_DIR) / "parqet_activities.json"
+        if raw_cache.exists():
+            raw_activities = json.loads(raw_cache.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.debug(f"Raw Activities Cache nicht verfügbar: {e}")
+
+    try:
+        from engine.portfolio_history import build_portfolio_history
+        result = await build_portfolio_history(
+            activities, period_days=days, raw_activities=raw_activities
+        )
+        if result and result.get("dates"):
+            _set_cached(cache_key, result)
+        return result
+    except Exception as e:
+        logger.error(f"Portfolio History Detail fehlgeschlagen: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e)}
+

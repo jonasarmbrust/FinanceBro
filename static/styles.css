@@ -2565,4 +2565,114 @@ body.light-mode .tab.active {
     opacity: 0.7;
     cursor: not-allowed;
 }
+
+/* ==================== Portfolio Historie ==================== */
+.historie-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.historie-controls {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.historie-chart-wrap {
+    position: relative;
+}
+
+.historie-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15, 23, 42, 0.7);
+    border-radius: var(--radius-md);
+    z-index: 10;
+    gap: 0.5rem;
+}
+
+.historie-loading p {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.historie-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.25rem;
+    padding: 1rem 0 0.5rem;
+}
+
+.historie-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
+.historie-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.historie-legend-ticker {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.historie-legend-value {
+    color: var(--text-muted);
+}
+
+.historie-summary {
+    margin-top: 0.5rem;
+}
+
+.historie-summary-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+}
+
+.historie-summary-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.historie-summary-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.historie-summary-value {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.historie-summary-value.positive {
+    color: var(--green);
+}
+
+.historie-summary-value.negative {
+    color: var(--red);
+}
 

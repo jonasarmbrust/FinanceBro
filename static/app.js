@@ -839,6 +839,10 @@ function switchTab(tab) {
     if (tab === 'analyse') {
         renderAnalyseTab();
     }
+    // Load historie tab data on first view
+    if (tab === 'historie') {
+        loadHistorie('6month');
+    }
 }
 
 // ==================== Filter & Sort ====================
@@ -2205,4 +2209,261 @@ function _renderMarkdown(text) {
     // Clean up duplicate <ul> tags
     html = html.replace(/<\/ul><br><ul>/g, '');
     return html;
+}
+
+// ==================== Portfolio Historie (Stacked Area Chart) ====================
+let historieChartInstance = null;
+let historieCurrentPeriod = '6month';
+
+const HISTORIE_COLORS = [
+    '#3b82f6', '#8b5cf6', '#06b6d4', '#22c55e', '#eab308',
+    '#ef4444', '#f97316', '#ec4899', '#14b8a6', '#6366f1',
+    '#a855f7', '#0ea5e9', '#84cc16', '#f59e0b', '#e11d48',
+    '#10b981', '#7c3aed', '#0891b2', '#65a30d', '#dc2626',
+];
+
+async function loadHistorie(period, btn) {
+    historieCurrentPeriod = period;
+
+    // Update period buttons
+    if (btn) {
+        const parent = btn.parentElement;
+        parent.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+    }
+
+    // Show loading
+    const loadingEl = document.getElementById('historieLoading');
+    const canvasEl = document.getElementById('historieChart');
+    if (loadingEl) loadingEl.style.display = 'flex';
+    if (canvasEl) canvasEl.style.opacity = '0.3';
+
+    try {
+        const res = await fetch(`/api/portfolio/history-detail?period=${period}`);
+        if (!res.ok) {
+            console.error('Historie laden fehlgeschlagen:', res.status);
+            if (loadingEl) loadingEl.style.display = 'none';
+            if (canvasEl) canvasEl.style.opacity = '1';
+            return;
+        }
+        const data = await res.json();
+        if (data.error || !data.dates || data.dates.length === 0) {
+            if (loadingEl) loadingEl.style.display = 'none';
+            if (canvasEl) canvasEl.style.opacity = '1';
+            const summaryEl = document.getElementById('historieSummary');
+            if (summaryEl) summaryEl.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:2rem;">Keine historischen Daten verfügbar. Bitte zuerst ein Parqet-Update durchführen.</p>';
+            return;
+        }
+        renderHistorieChart(data);
+    } catch (e) {
+        console.error('Historie laden fehlgeschlagen:', e);
+    } finally {
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (canvasEl) canvasEl.style.opacity = '1';
+    }
+}
+
+function renderHistorieChart(data) {
+    const ctx = document.getElementById('historieChart');
+    if (!ctx) return;
+    if (historieChartInstance) historieChartInstance.destroy();
+
+    const { dates, stocks, total, total_cost } = data;
+    const tickers = Object.keys(stocks);
+
+    // Build datasets: one stacked area per stock
+    const datasets = [];
+    tickers.forEach((ticker, i) => {
+        const color = HISTORIE_COLORS[i % HISTORIE_COLORS.length];
+        const stockData = stocks[ticker];
+        datasets.push({
+            label: `${ticker} (${stockData.name})`,
+            data: stockData.values,
+            backgroundColor: color + '40',  // 25% opacity
+            borderColor: color,
+            borderWidth: 1,
+            fill: true,
+            stack: 'portfolio',
+            tension: 0.3,
+            pointRadius: 0,
+            pointHoverRadius: 3,
+            order: tickers.length - i,  // Largest at bottom
+        });
+    });
+
+    // Total line (not stacked, on top)
+    datasets.push({
+        label: 'Gesamtwert',
+        data: total,
+        borderColor: '#f1f5f9',
+        borderWidth: 2.5,
+        fill: false,
+        tension: 0.3,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        order: 0,
+        borderDash: [],
+    });
+
+    // Cost basis line (dashed)
+    if (total_cost && total_cost.some(v => v > 0)) {
+        datasets.push({
+            label: 'Einstandskosten',
+            data: total_cost,
+            borderColor: '#94a3b8',
+            borderWidth: 1.5,
+            borderDash: [6, 4],
+            fill: false,
+            tension: 0.3,
+            pointRadius: 0,
+            pointHoverRadius: 3,
+            order: -1,
+        });
+    }
+
+    // Sparse labels (show ~12 dates on x-axis)
+    const labelInterval = Math.max(1, Math.floor(dates.length / 12));
+
+    historieChartInstance = new Chart(ctx.getContext('2d'), {
+        type: 'line',
+        data: { labels: dates, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { intersect: false, mode: 'index' },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: {
+                        color: '#64748b',
+                        font: { family: 'Inter', size: 10 },
+                        maxTicksLimit: 12,
+                        callback: function(value, index) {
+                            if (index % labelInterval === 0) {
+                                const d = dates[index];
+                                if (!d) return '';
+                                const parts = d.split('-');
+                                return `${parts[2]}.${parts[1]}`;
+                            }
+                            return '';
+                        }
+                    }
+                },
+                y: {
+                    stacked: true,
+                    grid: { color: 'rgba(255,255,255,0.04)' },
+                    ticks: {
+                        color: '#64748b',
+                        font: { family: 'Inter', size: 10 },
+                        callback: v => formatCurrency(v),
+                    }
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: '#1a2035',
+                    titleColor: '#f1f5f9',
+                    bodyColor: '#94a3b8',
+                    borderColor: 'rgba(255,255,255,0.1)',
+                    borderWidth: 1,
+                    cornerRadius: 8,
+                    padding: 12,
+                    callbacks: {
+                        title: (items) => {
+                            if (!items.length) return '';
+                            const d = items[0].label;
+                            const parts = d.split('-');
+                            return `${parts[2]}.${parts[1]}.${parts[0]}`;
+                        },
+                        label: (ctx) => {
+                            const val = ctx.raw;
+                            if (val == null || val === 0) return null;
+                            return `${ctx.dataset.label}: ${formatCurrency(val)}`;
+                        },
+                        afterBody: (items) => {
+                            if (!items.length) return '';
+                            const idx = items[0].dataIndex;
+                            const totalVal = total[idx] || 0;
+                            const costVal = total_cost ? (total_cost[idx] || 0) : 0;
+                            const pnl = totalVal - costVal;
+                            const pnlPct = costVal > 0 ? (pnl / costVal * 100) : 0;
+                            const sign = pnl >= 0 ? '+' : '';
+                            return `\n━━━━━━━━━━━━━━━━\nGesamt: ${formatCurrency(totalVal)}\nEinstand: ${formatCurrency(costVal)}\nP&L: ${sign}${formatCurrency(pnl)} (${sign}${pnlPct.toFixed(1)}%)`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Render legend
+    _renderHistorieLegend(tickers, stocks, total);
+
+    // Render summary
+    _renderHistorieSummary(dates, total, total_cost);
+}
+
+function _renderHistorieLegend(tickers, stocks, total) {
+    const container = document.getElementById('historieLegend');
+    if (!container) return;
+
+    const lastTotal = total[total.length - 1] || 1;
+
+    container.innerHTML = tickers.map((ticker, i) => {
+        const color = HISTORIE_COLORS[i % HISTORIE_COLORS.length];
+        const stockData = stocks[ticker];
+        const lastVal = stockData.values[stockData.values.length - 1] || 0;
+        const pct = lastTotal > 0 ? (lastVal / lastTotal * 100) : 0;
+        return `
+            <div class="historie-legend-item">
+                <span class="historie-legend-dot" style="background:${color}"></span>
+                <span class="historie-legend-ticker">${ticker}</span>
+                <span class="historie-legend-value">${formatCurrency(lastVal)} (${pct.toFixed(1)}%)</span>
+            </div>
+        `;
+    }).join('');
+}
+
+function _renderHistorieSummary(dates, total, totalCost) {
+    const container = document.getElementById('historieSummary');
+    if (!container || !dates.length) return;
+
+    const firstVal = total[0] || 0;
+    const lastVal = total[total.length - 1] || 0;
+    const change = lastVal - firstVal;
+    const changePct = firstVal > 0 ? (change / firstVal * 100) : 0;
+
+    const costFirst = totalCost ? (totalCost[0] || 0) : 0;
+    const costLast = totalCost ? (totalCost[totalCost.length - 1] || 0) : 0;
+    const totalPnl = lastVal - costLast;
+    const totalPnlPct = costLast > 0 ? (totalPnl / costLast * 100) : 0;
+
+    const sign = change >= 0 ? '+' : '';
+    const pnlSign = totalPnl >= 0 ? '+' : '';
+    const pnlClass = totalPnl >= 0 ? 'positive' : 'negative';
+
+    const startDate = dates[0].split('-');
+    const endDate = dates[dates.length - 1].split('-');
+
+    container.innerHTML = `
+        <div class="historie-summary-row">
+            <div class="historie-summary-item">
+                <span class="historie-summary-label">Zeitraum</span>
+                <span class="historie-summary-value">${startDate[2]}.${startDate[1]}.${startDate[0]} — ${endDate[2]}.${endDate[1]}.${endDate[0]}</span>
+            </div>
+            <div class="historie-summary-item">
+                <span class="historie-summary-label">Wertentwicklung</span>
+                <span class="historie-summary-value ${pnlClass}">${sign}${formatCurrency(change)} (${sign}${changePct.toFixed(1)}%)</span>
+            </div>
+            <div class="historie-summary-item">
+                <span class="historie-summary-label">Aktueller Wert</span>
+                <span class="historie-summary-value">${formatCurrency(lastVal)}</span>
+            </div>
+            <div class="historie-summary-item">
+                <span class="historie-summary-label">Gesamt P&L</span>
+                <span class="historie-summary-value ${pnlClass}">${pnlSign}${formatCurrency(totalPnl)} (${pnlSign}${totalPnlPct.toFixed(1)}%)</span>
+            </div>
+        </div>
+    `;
 }

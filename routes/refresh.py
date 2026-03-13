@@ -132,3 +132,35 @@ async def trigger_report():
 
     asyncio.create_task(_send_report())
     return {"status": "started", "message": f"AI-Report wird gesendet ({len(scored)} Aktien mit Score)..."}
+
+
+@router.post("/api/trigger-weekly-digest")
+async def trigger_weekly_digest():
+    """Weekly Digest via Cloud Scheduler (Freitag 22:30 CET).
+
+    1. Quick-Price-Refresh (aktuelle Kurse nach US-Börsenschluss)
+    2. Weekly Digest generieren und via Telegram senden
+    """
+    if not settings.telegram_configured:
+        return {"status": "error", "message": "Telegram nicht konfiguriert"}
+
+    summary = portfolio_data.get("summary")
+    if not summary or not summary.stocks:
+        return {"status": "error", "message": "Keine Portfolio-Daten — bitte zuerst Refresh ausführen"}
+
+    async def _send_digest():
+        try:
+            # Erst Kurse aktualisieren (US-Börsenschluss war um 22:00 CET)
+            logger.info("📧 Weekly Digest: Aktualisiere Kurse...")
+            await _quick_price_refresh()
+
+            # Dann Digest senden
+            from services.weekly_digest import send_weekly_digest
+            await send_weekly_digest()
+            logger.info("✅ Weekly Digest gesendet")
+        except Exception as e:
+            logger.error(f"Weekly Digest fehlgeschlagen: {e}")
+
+    asyncio.create_task(_send_digest())
+    return {"status": "started", "message": "Weekly Digest wird generiert und gesendet..."}
+
