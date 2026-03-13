@@ -52,7 +52,7 @@ FinanzBro/
 │   ├── parqet.py           # Parqet Connect API (Performance + Activities)
 │   ├── parqet_auth.py      # OAuth2 Token-Management (PKCE, Refresh)
 │   ├── fmp.py              # Financial Modeling Prep API
-│   ├── yfinance_data.py    # yFinance (Batch-Download)
+│   ├── yfinance_data.py    # yFinance v1.2.0 (Recommendations, Insider, ESG, Fundamentals-Fallback)
 │   ├── finnhub_ws.py       # Finnhub WebSocket (Echtzeit US)
 │   ├── yfinance_ws.py      # yFinance WebSocket (Echtzeit International)
 │   ├── technical.py        # RSI, SMA, MACD Berechnung
@@ -145,7 +145,7 @@ graph LR
 | Cache | TTL | Begründung |
 |-------|-----|------------|
 | FMP | 24h | Fundamentaldaten ändern sich selten |
-| yFinance | 24h | Analyst Recommendations, ESG |
+| yFinance | 24h | Recommendations (v1.2.0 aggregiert), Insider, ESG, Fundamentals-Fallback |
 | Parqet | 12h | Portfolio-Positionen (Stale-Fallback bei Ablauf) |
 | Currency | 12h | Wechselkurse (<0.5% Änderung/Tag) |
 | Fear & Greed | 6h | Sentiment-Index (persistent über Restarts) |

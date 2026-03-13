@@ -66,3 +66,19 @@ Basiert auf der Anzahl verfügbarer Faktoren:
 - `_normalize_pct` Schwellwert verschärft (< 1.0 statt < 5.0)
 - D/E Normalisierung: Schwellwert > 50 (statt > 10) für Finanzsektor-Kompatibilität
 - Legacy-Models entfernt: `StocknearData`, `AlphaVantageData`
+
+## v5.1 Änderungen (yfinance v1.2.0 Kompatibilität)
+
+- **Recommendations Fix:** yfinance v1.2.0 liefert aggregierte Spalten
+  `[strongBuy, buy, hold, sell, strongSell]` statt einzelner `toGrade`-Ratings.
+  Fetcher erkennt jetzt beide Formate (v1.2.0 + Legacy).
+- **Insider Transactions Fix:** `Transaction`-Spalte ist in v1.2.0 leer,
+  Daten stehen in `Text`-Spalte. Erkennt auch "acquisition"/"disposition".
+- **ESG Fallback:** `ticker.sustainability` von Yahoo eingestellt →
+  Fallback über `ticker.info` (`esgScore`, `totalEsg`, `overallRisk`).
+- **Analyst Counts Enrichment:** yFinance Fundamentals-Fallback liefert
+  jetzt auch Buy/Hold/Sell-Aufschlüsselung aus `ticker.recommendations`
+  (v1.2.0 Format) für Nicht-FMP-Ticker.
+- **Datenabdeckung:** 17/19 Positionen mit vollständigen Daten
+  (nur ISINs ohne yfinance-Mapping fehlen).
+

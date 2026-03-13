@@ -158,6 +158,32 @@ class CacheManager:
             self._ensure_loaded()
             return len(self._memory)
 
+    @property
+    def age_hours(self) -> float | None:
+        """Alter des Caches in Stunden (seit letztem Schreiben). None wenn nie geschrieben."""
+        with self._lock:
+            self._ensure_loaded()
+            if self._cached_at is None:
+                return None
+            return (datetime.now() - self._cached_at).total_seconds() / 3600
+
+    def is_fresh(self, key: str, max_hours: float = 6.0) -> bool:
+        """Prüft ob ein Cache-Eintrag existiert und der gesamte Cache frisch ist.
+
+        Nutzt den globalen _cached_at Zeitstempel des Caches.
+        Returns True wenn: Key existiert UND Cache < max_hours alt.
+        """
+        with self._lock:
+            self._ensure_loaded()
+            if key not in self._memory:
+                return False
+            if self._memory[key] == "__NEGATIVE__":
+                return False
+            if self._cached_at is None:
+                return False
+            age = (datetime.now() - self._cached_at).total_seconds() / 3600
+            return age < max_hours
+
     # --- Statische Methoden für globale Cache-Operationen ---
 
     @staticmethod

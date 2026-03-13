@@ -200,17 +200,33 @@ async def _do_refresh():
         # --- 5. Daily Changes + Preisanpassungen ---
         _set_progress("Lade Tagesänderungen...", 75)
         # Hole Daily Changes per yfinance Batch-Call
+        # ABER: Skip wenn Preise gerade erst geladen wurden (< 2 Min alt)
         non_cash_tickers = [s.position.ticker for s in stocks if s.position.ticker != "CASH"]
         yf_tickers_map = {t: YFINANCE_ALIASES.get(t, t) for t in non_cash_tickers}
         yf_tickers_unique = list(set(yf_tickers_map.values()))
         daily_changes = {}
-        try:
-            _, daily_raw = await quick_price_update(yf_tickers_unique)
-            for orig, yf_t in yf_tickers_map.items():
-                if yf_t in daily_raw:
-                    daily_changes[orig] = daily_raw[yf_t]
-        except Exception as e:
-            logger.debug(f"Daily Changes konnten nicht geladen werden: {e}")
+
+        # Prüfe ob Preise kürzlich aktualisiert wurden (Startup-Preise wiederverwenden)
+        last_refresh = portfolio_data.get("last_refresh")
+        prices_are_fresh = False
+        if last_refresh:
+            age_seconds = (datetime.now(tz=TZ_BERLIN) - last_refresh).total_seconds()
+            prices_are_fresh = age_seconds < 120  # < 2 Minuten
+
+        if prices_are_fresh:
+            # Startup-Preise sind frisch — nur Daily Changes von bestehenden Daten übernehmen
+            logger.info("Daily Changes: Startup-Preise frisch (< 2 Min) — Batch-Download uebersprungen")
+            for s in stocks:
+                if s.position.daily_change_pct is not None:
+                    daily_changes[s.position.ticker] = s.position.daily_change_pct
+        else:
+            try:
+                _, daily_raw = await quick_price_update(yf_tickers_unique)
+                for orig, yf_t in yf_tickers_map.items():
+                    if yf_t in daily_raw:
+                        daily_changes[orig] = daily_raw[yf_t]
+            except Exception as e:
+                logger.debug(f"Daily Changes konnten nicht geladen werden: {e}")
 
         # Setze daily_change_pct + konvertiere alle Preise nach EUR
         for s in stocks:
@@ -412,11 +428,14 @@ async def _quick_price_refresh():
         except Exception as e:
             logger.debug(f"yfinance WS-Preise nicht verfügbar: {e}")
 
-        # 2. yfinance Fallback für restliche Ticker (über Aliases)
+        # 2. yfinance Fallback NUR für Ticker ohne WS-Preis
+        # Wenn WS >= 80% abdeckt, keinen Batch-Download starten (spart API-Calls)
+        non_cash_count = len([t for t in tickers if t != "CASH"])
+        ws_coverage = yf_ws_count / non_cash_count if non_cash_count > 0 else 0
         remaining = [t for t in tickers if t not in prices and t != "CASH"]
-        if remaining:
-            # Map durch Aliases (z.B. DTEGY → DTE.DE) damit yfinance
-            # den richtigen Börsenplatz abfragt
+
+        if remaining and ws_coverage < 0.8:
+            # WS deckt weniger als 80% ab — Batch-Fallback für restliche Ticker
             ticker_to_yf = {t: YFINANCE_ALIASES.get(t, t) for t in remaining}
             yf_tickers = list(set(ticker_to_yf.values()))
             yf_prices, yf_daily = await quick_price_update(yf_tickers)
@@ -426,6 +445,11 @@ async def _quick_price_refresh():
                     prices[orig] = yf_prices[yf_t]
                 if yf_t in yf_daily:
                     daily_changes[orig] = yf_daily[yf_t]
+        elif remaining:
+            logger.debug(
+                f"Quick-Update: WS deckt {ws_coverage:.0%} ab — "
+                f"Batch-Download fuer {len(remaining)} Ticker uebersprungen"
+            )
 
         if not prices:
             return

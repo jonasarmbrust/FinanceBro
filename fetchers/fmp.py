@@ -159,9 +159,14 @@ def _extract_first(data: Optional[dict | list]) -> Optional[dict]:
 async def _cached_fmp_call(cache_key: str, endpoint: str, params: dict) -> Optional[dict]:
     """Generischer FMP-Call mit Cache und Negative-Caching.
 
+    Budget-Schutz: Wenn Cache < 6h alt ist, wird kein API-Call gemacht.
     Negative-Caching wird bei Rate-Limits (429) NICHT gesetzt,
     damit beim nächsten Refresh mit frischem Budget erneut gefragt wird.
     """
+    # Budget-Schutz: Frische Daten wiederverwenden (< 6h)
+    if _cache.is_fresh(cache_key, max_hours=6.0):
+        return _cache.get(cache_key)
+
     cached = _cache.get(cache_key)
     if cached is not None:
         if _cache.is_negative(cache_key):

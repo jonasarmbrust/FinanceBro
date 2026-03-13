@@ -23,7 +23,7 @@ FastAPI Backend (lokal / Cloud Run)
 |---|---|---|---|
 | **Parqet** | `fetchers/parqet.py` | OAuth2 / JWT | Portfolio-Positionen, Kaufkurse, Sektoren |
 | **FMP** | `fetchers/fmp.py` | `FMP_API_KEY` | Fundamentals, Analysten, Dividenden, News, Earnings |
-| **yfinance** | `fetchers/yfinance_data.py` | – | Kurse, Historische Daten, Market-Cap, Beta, Indizes |
+| **yfinance** | `fetchers/yfinance_data.py` | – | Kurse, Recommendations, Insider, ESG, Earnings, Fundamentals-Fallback |
 | **Finnhub** | `fetchers/finnhub_ws.py` | `FINNHUB_API_KEY` | Echtzeit-Kurse (WebSocket, nur US) |
 | **yFinance WS** | `fetchers/yfinance_ws.py` | – | Echtzeit-Kurse (WebSocket, International/EU) |
 | **CNN** | `fetchers/fear_greed.py` | – | Fear & Greed Index |
@@ -45,8 +45,8 @@ FastAPI Backend (lokal / Cloud Run)
 | Quantitative (Altman Z, Piotroski) | 10% | FMP |
 | Market Sentiment (Fear&Greed) | 7% | CNN |
 | Momentum (90d, 180d) | 6% | yfinance |
-| Insider Trading | 3% | yfinance |
-| ESG Risk | 2% | yfinance |
+| Insider Trading | 3% | yfinance (v1.2.0: `Text`-Spalte) |
+| ESG Risk | 2% | yfinance (`sustainability` + `info` Fallback) |
 
 **Rating:** Buy (≥68), Hold (40–67), Sell (<40)
 
