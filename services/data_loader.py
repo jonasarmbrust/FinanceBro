@@ -133,7 +133,7 @@ async def load_position_data(
             data_sources=ds,
         )
     except Exception as e:
-        logger.error(f"Fehler bei {pos.ticker}: {e}")
+        logger.exception(f"FATAL Exception bei {pos.ticker}: {e}")
         return StockFullData(position=pos, data_sources=ds)
 
 
