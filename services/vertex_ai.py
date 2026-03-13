@@ -162,18 +162,22 @@ async def cache_portfolio_context(summary) -> Optional[str]:
         # Neuen Cache erstellen
         from google.genai.types import Content, Part
 
-        cache = await client.aio.caches.create(
-            model="gemini-2.5-pro",
-            config={
-                "contents": [
-                    Content(
-                        role="user",
-                        parts=[Part(text=context_text)],
-                    )
-                ],
-                "display_name": "finanzbro-portfolio",
-                "ttl": "14400s",  # 4 Stunden (bis zum nächsten Refresh)
-            },
+        import asyncio
+        cache = await asyncio.wait_for(
+            client.aio.caches.create(
+                model="gemini-2.5-pro",
+                config={
+                    "contents": [
+                        Content(
+                            role="user",
+                            parts=[Part(text=context_text)],
+                        )
+                    ],
+                    "display_name": "finanzbro-portfolio",
+                    "ttl": "14400s",  # 4 Stunden (bis zum nächsten Refresh)
+                },
+            ),
+            timeout=20.0
         )
 
         _active_cache_name = cache.name

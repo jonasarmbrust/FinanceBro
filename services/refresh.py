@@ -198,7 +198,12 @@ async def _do_refresh():
                 if settings.gemini_configured and tech_picks:
                     try:
                         from services.tech_radar_ai import enrich_with_ai_analysis
-                        tech_picks = await enrich_with_ai_analysis(tech_picks)
+                        tech_picks = await asyncio.wait_for(
+                            enrich_with_ai_analysis(tech_picks),
+                            timeout=30.0
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning("Tech-Radar AI-Analyse: Timeout (30s)")
                     except Exception as e:
                         logger.warning(f"Tech-Radar AI-Analyse fehlgeschlagen: {e}")
             except Exception as e:
@@ -329,12 +334,17 @@ async def _do_refresh():
                 if 15 <= _now_sc.hour <= 16:
                     try:
                         from services.score_commentary import generate_score_commentaries
-                        commentaries = await generate_score_commentaries(stocks)
+                        commentaries = await asyncio.wait_for(
+                            generate_score_commentaries(stocks),
+                            timeout=60.0
+                        )
                         for stock in stocks:
                             if stock.score and stock.position.ticker in commentaries:
                                 stock.score.ai_comment = commentaries[stock.position.ticker]
                         if commentaries:
                             logger.info(f"🤖 AI-Kommentare: {len(commentaries)} Aktien kommentiert")
+                    except asyncio.TimeoutError:
+                        logger.warning("Score-Kommentare: Timeout (60s)")
                     except Exception as e:
                         logger.warning(f"Score-Kommentare fehlgeschlagen: {e}")
                 else:
@@ -365,7 +375,12 @@ async def _do_refresh():
         if settings.gemini_configured:
             try:
                 from services.vertex_ai import cache_portfolio_context
-                await cache_portfolio_context(summary)
+                await asyncio.wait_for(
+                    cache_portfolio_context(summary),
+                    timeout=30.0
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Context Caching: Timeout (30s)")
             except Exception as e:
                 logger.debug(f"Context Caching übersprungen: {e}")
 
