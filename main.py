@@ -233,9 +233,6 @@ async def lifespan(app: FastAPI):
                         project_number = os.getenv("GOOGLE_CLOUD_PROJECT_NUMBER", "")
                         if k_service and project_number:
                             service_url = f"https://{k_service}-{project_number}.{k_region}.run.app"
-                        elif k_service:
-                            # Fallback: bekannte URL-Struktur
-                            service_url = f"https://{k_service}-384210760656.{k_region}.run.app"
                     
                     if service_url:
                         secret = settings.TELEGRAM_WEBHOOK_SECRET
