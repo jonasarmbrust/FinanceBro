@@ -117,22 +117,25 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(_startup_load())
 
     # Verzögerter Full-Refresh: Lädt FMP, yFinance, Technical Daten im Hintergrund
-    # → Wartet auf _startup_load (statt fixer 30s) um Race Conditions zu vermeiden
+    # → Wartet auf _startup_load, dann Full-Refresh
     # → User sieht nach ~90s vollständige Daten in der Detail-Ansicht
     async def _delayed_full_refresh():
         try:
-            # Maximal 60 Sekunden auf Parqet/yFinance-Init warten, um Deadlock zu vermeiden
-            await asyncio.wait_for(_startup_done.wait(), timeout=60.0)
+            # Warte auf Parqet/yFinance-Init (180s für Cloud Run Cold Start + Token-Refresh)
+            await asyncio.wait_for(_startup_done.wait(), timeout=180.0)
             await asyncio.sleep(10)  # Kurze Pause nach Startup
-            logger.info("🔄 Auto-Refresh: Lade FMP/yFinance/Technical Daten...")
-            await _refresh_data()
-            logger.info("✅ Auto-Refresh abgeschlossen")
         except asyncio.TimeoutError:
-            logger.error("🚨 Startup dauerte zu lang, Auto-Refresh abgebrochen!")
-            # Notfall: Lock hart zurücksetzen, falls er hängt
+            logger.warning("⚠️ Startup dauerte >180s — starte Full-Refresh trotzdem")
+            # Lock hart zurücksetzen, falls er hängt
             from state import refresh_lock
             if refresh_lock.locked():
                 refresh_lock.release()
+            await asyncio.sleep(30)  # Warte noch etwas vor dem Retry
+
+        try:
+            logger.info("🔄 Auto-Refresh: Lade FMP/yFinance/Technical Daten...")
+            await _refresh_data()
+            logger.info("✅ Auto-Refresh abgeschlossen")
         except Exception as e:
             logger.warning(f"Auto-Refresh fehlgeschlagen: {e}")
 
@@ -191,6 +194,22 @@ async def lifespan(app: FastAPI):
         )
         logger.info("📧 Wöchentlicher Digest geplant: Freitag 22:30 CET (nach US-Börsenschluss)")
 
+        # News-Kurator: Proaktive Portfolio-Alerts (alle 4h, Mo-Fr)
+        async def _run_news_kurator():
+            try:
+                from services.news_kurator import check_portfolio_news
+                await check_portfolio_news()
+            except Exception as e:
+                logger.debug(f"News-Kurator Check fehlgeschlagen: {e}")
+
+        scheduler.add_job(
+            _run_news_kurator, "cron",
+            hour="9,13,17,21",
+            day_of_week="mon-fri",
+            id="news_kurator",
+        )
+        logger.info("📡 News-Kurator geplant: Mo-Fr um 09, 13, 17, 21 Uhr CET")
+
         # AI Finance Agent wird automatisch nach jeder Analyse in _do_refresh() getriggert
         if settings.telegram_configured:
             logger.info("🤖 AI Finance Agent: Wird nach Analyse automatisch getriggert (Telegram-Report)")
@@ -216,7 +235,8 @@ async def lifespan(app: FastAPI):
                             service_url = f"https://{k_service}-{project}.{k_region}.run.app"
                     
                     if service_url:
-                        webhook_url = f"{service_url}/api/telegram/webhook"
+                        secret = settings.TELEGRAM_WEBHOOK_SECRET
+                        webhook_url = f"{service_url}/api/telegram/webhook/{secret}"
                         api_url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/setWebhook"
                         async with httpx.AsyncClient(timeout=10) as client:
                             r = await client.post(api_url, json={"url": webhook_url})
@@ -282,8 +302,13 @@ app = FastAPI(
 )
 
 # GZip-Kompression für alle Responses (>500 Bytes)
-# → ~70% Payload-Reduktion für JSON-APIs und Static Files
 app.add_middleware(GZipMiddleware, minimum_size=500)
+
+# Passwortschutz (Basic Auth) — nur aktiv wenn DASHBOARD_USER/PASSWORD gesetzt
+if settings.auth_configured:
+    from middleware.auth import BasicAuthMiddleware
+    app.add_middleware(BasicAuthMiddleware)
+    logger.info(f"🔒 Dashboard-Passwortschutz aktiv (User: {settings.DASHBOARD_USER})")
 
 # Static files mit Cache-Control Headers (1 Stunde)
 STATIC_DIR = Path(__file__).parent / "static"
@@ -304,6 +329,12 @@ app.include_router(telegram_router)
 app.include_router(parqet_oauth_router)
 
 
+# Health Check (für Cloud Run Startup/Liveness Probes)
+@app.get("/health")
+async def health():
+    """Sofortige Antwort — unabhängig vom Datenladestand."""
+    return {"status": "ok"}
+
 if __name__ == "__main__":
     import uvicorn
     is_dev = settings.ENVIRONMENT == "development"
@@ -313,7 +344,11 @@ if __name__ == "__main__":
         host=settings.SERVER_HOST,
         port=settings.SERVER_PORT,
         reload=is_dev,
-        # Cache-Verzeichnis vom File-Watcher ausschließen
-        # → verhindert Endlos-Neustarts durch Cache-Dateiänderungen
-        reload_excludes=["cache/*", "*.json"] if is_dev else None,
+        # NUR Source-Verzeichnisse überwachen — verhindert Endlos-Neustarts
+        # durch __pycache__/*.pyc, cache/*.db, logs/* etc.
+        reload_dirs=[
+            ".", "engine", "fetchers", "routes", "services",
+            "middleware", "static",
+        ] if is_dev else None,
+        reload_includes=["*.py", "*.html", "*.js", "*.css"] if is_dev else None,
     )

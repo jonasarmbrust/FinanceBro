@@ -23,8 +23,6 @@ class Settings(BaseSettings):
     FMP_API_KEY: str = ""
     FMP_BASE_URL: str = "https://financialmodelingprep.com/stable"
 
-
-
     # Parqet Connect API (OAuth2)
     PARQET_CLIENT_ID: str = ""
     PARQET_CLIENT_SECRET: str = ""
@@ -51,6 +49,7 @@ class Settings(BaseSettings):
     # Telegram Bot
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
+    TELEGRAM_WEBHOOK_SECRET: str = ""  # Geheimes Token in der Webhook-URL
 
     # Google Gemini / Vertex AI
     GEMINI_API_KEY: str = ""
@@ -62,6 +61,10 @@ class Settings(BaseSettings):
 
     # Caching
     CACHE_TTL_HOURS: int = 12
+
+    # Dashboard-Zugangsschutz (Basic Auth)
+    DASHBOARD_USER: str = ""
+    DASHBOARD_PASSWORD: str = ""
 
     # ── Computed Fields ──
 
@@ -98,6 +101,11 @@ class Settings(BaseSettings):
     @property
     def demo_mode(self) -> bool:
         return not self.FMP_API_KEY or self.FMP_API_KEY == "your_fmp_api_key_here"
+
+    @computed_field
+    @property
+    def auth_configured(self) -> bool:
+        return bool(self.DASHBOARD_USER and self.DASHBOARD_PASSWORD)
 
     def model_post_init(self, __context) -> None:
         # Sync PORT → SERVER_PORT (Cloud Run setzt PORT)

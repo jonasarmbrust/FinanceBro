@@ -62,8 +62,10 @@ PARQET_CONNECT_API = settings.PARQET_API_BASE_URL   # Connect API (OAuth2): http
 # Cached activities from last API call (reused by history endpoint)
 _cached_activities: list = []
 
-# Maximale Anzahl Activities die auf Disk gespeichert werden (ca. 12 Monate)
-_MAX_CACHED_ACTIVITIES = 500
+# Maximale Anzahl Activities die auf Disk gespeichert werden
+# Muss hoch genug sein um ALLE historischen Activities zu speichern
+# (für korrektes Cash-Saldo und Historie-Chart)
+_MAX_CACHED_ACTIVITIES = 5000
 
 
 def _save_activities_cache(activities: list):
@@ -162,6 +164,37 @@ ISIN_TICKER_MAP = {
     "DE0007037129": "RWE.DE",     # RWE
     "DE0007231326": "SIX2.DE",    # Sixt
     "DK0062498333": "NOVO-B.CO",  # Novo Nordisk B
+    # Historische Positionen (für Historie-Chart)
+    "US09075V1026": "BNTX",       # BioNTech
+    "US60770K1079": "MDB",        # MongoDB
+    "DE0007664039": "VOW3.DE",    # Volkswagen VZ
+    "US4581401001": "INTC",       # Intel
+    "US45662N1037": "INDI",       # Indie Semiconductor
+    "DE000BASF111": "BAS.DE",     # BASF
+    "US0494681010": "TEAM",       # Atlassian
+    "NO0010872468": "MOWI.OL",    # Mowi (Lachs-Zucht, Oslo)
+    "DE0005933931": "EXS1.DE",    # iShares Core DAX (ETF)
+    "IE00BMFKG444": "DBXD.DE",    # Xtrackers MSCI USA IT (ETF)
+    "IE00B1TXK627": "EXSA.DE",    # iShares STOXX Europe 600 (ETF)
+    "IE00B1XNHC34": "VGWL.DE",   # Vanguard FTSE All-World (ETF)
+    "IE00BLRPQH31": "IUSQ.DE",   # iShares MSCI ACWI (ETF)
+    "IE00BYZK4776": "IS3R.DE",   # iShares Core MSCI EM IMI (ETF)
+    "IE00BYZK4552": "EUNL.DE",   # iShares Core MSCI World (ETF)
+    # Neue Positionen (ab Mai 2024)
+    "DE000RENK730": "R3NK.DE",    # Renk Group
+    "DE0006231004": "IFX.DE",     # Infineon Technologies
+    "DE0008232125": "LHA.DE",     # Lufthansa
+    "US36467W1099": "GE",         # GE Aerospace
+    "US6544453037": "NKE",        # Nike
+    "US91332U1016": "U",          # Unity Software
+    "US5324571083": "LLY",        # Eli Lilly
+    "US1696561059": "CHPT",       # Chipotle (ex-CMG) — prüfe Ticker
+    "US7960542030": "SMSN.IL",    # Samsung SDI (London)
+    "KYG6683N1034": "NIO",        # NIO (Cayman)
+    "US0404131064": "ARM",        # ARM Holdings (Class A)
+    "US0404132054": "ARM",        # ARM Holdings (Class A) alternate
+    "IE00BM67HW99": "VGWD.DE",   # Vanguard FTSE All-World High Dividend (ETF)
+    # Fonds (keine yfinance-Daten verfügbar)
     "DE000A2QJLA8": "DE000A2QJLA8",  # BIT Global Fintech (Fonds, bleibt ISIN)
     "DE000A2QDRW2": "DE000A2QDRW2",  # BIT Global Leaders (Fonds, bleibt ISIN)
 }
@@ -904,7 +937,9 @@ async def fetch_portfolio_activities_raw() -> list[dict]:
         except Exception:
             pass
 
-    # Fallback 2: Neuer API-Call wenn Cache leer
+    # Fallback 2: Connect API mit Cursor-Pagination + Safety Cap (OAuth-Token)
+    # Offset-Pagination ist NICHT verwendbar (API gibt endlos Duplikate zurück!)
+    MAX_ACTIVITIES = 5000  # Sicherheitslimit gegen Endlos-Loops
     if not all_activities:
         access_token = await _ensure_valid_token()
         if not access_token:
@@ -913,29 +948,42 @@ async def fetch_portfolio_activities_raw() -> list[dict]:
         if not portfolio_id:
             return []
         headers = {"Authorization": f"Bearer {access_token}"}
+        base_url = f"{PARQET_CONNECT_API}/portfolios/{portfolio_id}/activities"
         try:
             async with httpx.AsyncClient(timeout=30) as client:
-                offset = 0
                 all_activities = []
+                cursor = None
+                page = 0
                 while True:
-                    url = f"{PARQET_INTERNAL_API}/activities?portfolioId={portfolio_id}&limit=100&offset={offset}"
+                    url = f"{base_url}?limit=500"
+                    if cursor:
+                        url += f"&cursor={cursor}"
                     resp = await client.get(url, headers=headers)
                     if resp.status_code == 401:
-                        new_token = await _ensure_valid_token()
+                        new_token = await _refresh_oauth_token()
                         if new_token:
                             headers["Authorization"] = f"Bearer {new_token}"
                             resp = await client.get(url, headers=headers)
                     if resp.status_code != 200:
+                        logger.warning(f"Connect API Activities: {resp.status_code}")
                         break
-                    data = resp.json()
-                    activities = data.get("activities", []) if isinstance(data, dict) else data
+                    body = resp.json()
+                    activities = body.get("activities", []) if isinstance(body, dict) else (body if isinstance(body, list) else [])
                     if not activities:
                         break
                     all_activities.extend(activities)
-                    has_more = data.get("hasMore", False) if isinstance(data, dict) else len(activities) >= 100
-                    if not has_more:
+                    page += 1
+                    logger.info(f"Activities Seite {page}: {len(activities)} (gesamt: {len(all_activities)})")
+                    cursor = body.get("cursor") if isinstance(body, dict) else None
+                    if not cursor:
                         break
-                    offset += 100
+                    if len(all_activities) >= MAX_ACTIVITIES:
+                        logger.warning(f"Activities Safety-Limit ({MAX_ACTIVITIES}) erreicht!")
+                        break
+                if all_activities:
+                    _cached_activities = all_activities
+                    _save_activities_cache(all_activities)
+                    logger.info(f"Activities geladen: {len(all_activities)} via Connect API ({page} Seiten)")
         except Exception as e:
             logger.error(f"Parqet Activities API Fehler: {e}")
             return []
@@ -947,14 +995,17 @@ async def fetch_portfolio_activities_raw() -> list[dict]:
     result = []
     for act in all_activities:
         act_type = (act.get("type") or "").lower()
-        if act.get("holdingAssetType") == "Cash" and act_type not in ("transferin", "transferout"):
+        hat = (act.get("holdingAssetType") or "").lower()
+        if hat == "cash" and act_type not in ("transferin", "transferout", "transfer_in", "transfer_out", "deposit", "withdrawal"):
             continue
 
         date = act.get("datetime") or act.get("date") or ""
         if date and "T" in date:
             date = date.split("T")[0]
 
-        isin = act.get("isin") or (act.get("asset") or {}).get("identifier", "")
+        # ISIN aus verschiedenen API-Formaten auslesen
+        asset = act.get("asset") or {}
+        isin = act.get("isin") or asset.get("isin") or asset.get("identifier", "")
         ticker = ISIN_TICKER_MAP.get(isin, isin) if isin else ""
         name = act.get("name") or (act.get("sharedAsset") or {}).get("name", "")
 
@@ -978,3 +1029,141 @@ def clear_cache():
     if CACHE_FILE.exists():
         CACHE_FILE.unlink()
     logger.info("Parqet Cache geloescht")
+
+
+# ─────────────────────────────────────────────────────────────
+# Parqet Performance API (POST /performance)
+# ─────────────────────────────────────────────────────────────
+
+_performance_cache = CacheManager("parqet_performance", ttl_hours=1)
+
+async def fetch_portfolio_performance() -> dict | None:
+    """Lädt die komplette Portfolio-Performance über die Connect API.
+
+    POST https://connect.parqet.com/performance
+    Body: {"portfolioIds": ["<id>"]}
+
+    Returns: Strukturiertes Dict mit KPIs, Holdings, Steuern, Dividenden.
+    """
+    # 1. Cache prüfen
+    cached = _performance_cache.get("performance_data")
+    if cached:
+        logger.debug("Performance: aus Cache geladen")
+        return cached
+
+    # 2. API-Call
+    access_token = await _ensure_valid_token()
+    if not access_token:
+        logger.warning("Performance API: Kein Token verfügbar")
+        return None
+
+    portfolio_id = settings.PARQET_PORTFOLIO_ID
+    if not portfolio_id:
+        logger.warning("Performance API: Keine Portfolio-ID konfiguriert")
+        return None
+
+    headers = {"Authorization": f"Bearer {access_token}"}
+    url = f"{PARQET_CONNECT_API}/performance"
+    body = {"portfolioIds": [portfolio_id]}
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(url, headers=headers, json=body)
+
+            if resp.status_code == 401:
+                new_token = await _refresh_oauth_token()
+                if new_token:
+                    headers["Authorization"] = f"Bearer {new_token}"
+                    resp = await client.post(url, headers=headers, json=body)
+
+            if resp.status_code != 200:
+                logger.warning(f"Performance API: {resp.status_code}")
+                return None
+
+            data = resp.json()
+
+    except Exception as e:
+        logger.error(f"Performance API Fehler: {e}")
+        return None
+
+    # 3. Response parsen
+    perf = data.get("performance", {})
+    raw_holdings = data.get("holdings", [])
+    interval = data.get("interval", {})
+
+    # Portfolio-Level KPIs
+    kpis = {
+        "valuation": perf.get("valuation", {}).get("atIntervalEnd", 0),
+        "unrealizedGains": perf.get("unrealizedGains", {}).get("inInterval", {}),
+        "realizedGains": perf.get("realizedGains", {}).get("inInterval", {}),
+        "dividends": perf.get("dividends", {}).get("inInterval", {}),
+        "taxes": perf.get("taxes", {}).get("inInterval", {}).get("taxes", 0),
+        "fees": perf.get("fees", {}).get("inInterval", {}).get("fees", 0),
+        "interval": interval,
+    }
+
+    # Holdings parsen
+    holdings = []
+    for h in raw_holdings:
+        asset = h.get("asset", {})
+        pos = h.get("position", {})
+        h_perf = h.get("performance", {})
+
+        holding = {
+            "id": h.get("id", ""),
+            "name": asset.get("name", h.get("nickname", "")),
+            "isin": asset.get("isin", ""),
+            "type": asset.get("type", ""),  # "security" | "cash"
+            "logo": h.get("logo", ""),
+            "earliestActivityDate": h.get("earliestActivityDate", ""),
+            "activityCount": h.get("activityCount", 0),
+            "isSold": pos.get("isSold", False),
+            # Position
+            "shares": pos.get("shares", 0),
+            "purchasePrice": pos.get("purchasePrice", 0),
+            "purchaseValue": pos.get("purchaseValue", 0),
+            "currentPrice": pos.get("currentPrice", 0),
+            "currentValue": pos.get("currentValue", 0),
+            # Performance
+            "unrealizedGainGross": h_perf.get("unrealizedGains", {}).get("inInterval", {}).get("gainGross", 0),
+            "unrealizedReturnGross": h_perf.get("unrealizedGains", {}).get("inInterval", {}).get("returnGross", 0),
+            "realizedGainGross": h_perf.get("realizedGains", {}).get("inInterval", {}).get("gainGross", 0),
+            "dividendsGross": h_perf.get("dividends", {}).get("inInterval", {}).get("gainGross", 0),
+            "dividendsNet": h_perf.get("dividends", {}).get("inInterval", {}).get("gainNet", 0),
+            "taxes": h_perf.get("taxes", {}).get("inInterval", {}).get("taxes", 0),
+            "fees": h_perf.get("fees", {}).get("inInterval", {}).get("fees", 0),
+        }
+
+        # Ticker aus ISIN auflösen
+        if holding["isin"]:
+            holding["ticker"] = ISIN_TICKER_MAP.get(holding["isin"], holding["isin"])
+        elif holding["type"] == "cash":
+            holding["ticker"] = "CASH"
+            holding["name"] = holding["name"] or "💵 Cash"
+        else:
+            holding["ticker"] = ""
+
+        holdings.append(holding)
+
+    # Sortieren: aktive zuerst, dann nach currentValue absteigend
+    holdings.sort(key=lambda h: (h["isSold"], -h["currentValue"]))
+
+    result = {
+        "kpis": kpis,
+        "holdings": holdings,
+        "holdingsActive": [h for h in holdings if not h["isSold"]],
+        "holdingsSold": [h for h in holdings if h["isSold"]],
+        "totalHoldings": len(holdings),
+        "activeHoldings": sum(1 for h in holdings if not h["isSold"]),
+        "soldHoldings": sum(1 for h in holdings if h["isSold"]),
+    }
+
+    # 4. Cachen
+    _performance_cache.set("performance_data", result)
+    logger.info(
+        f"Performance API: {result['activeHoldings']} aktiv, "
+        f"{result['soldHoldings']} verkauft, "
+        f"Wert: {kpis['valuation']:,.2f}€"
+    )
+
+    return result

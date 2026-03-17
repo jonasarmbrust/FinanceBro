@@ -143,7 +143,7 @@ async def get_portfolio_history(days: int = 90):
         logger.warning(f"Portfolio Activities Timeline fehlgeschlagen: {e}")
 
     # --- 2. Fallback: Lokale Snapshots ---
-    from engine.history import load_history
+    from database import load_snapshots as load_history
     local = load_history(days=days)
     if local:
         return local

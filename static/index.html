@@ -242,26 +242,47 @@
 
         <!-- Tab: Historie -->
         <section class="tab-content" id="tab-historie">
-            <div class="chart-card" style="padding:1.5rem;">
-                <div class="historie-header">
-                    <h3 class="chart-title">📜 Portfolio-Historie</h3>
-                    <div class="historie-controls">
-                        <button class="filter-btn" onclick="loadHistorie('1month', this)">1M</button>
-                        <button class="filter-btn" onclick="loadHistorie('3month', this)">3M</button>
-                        <button class="filter-btn active" onclick="loadHistorie('6month', this)">6M</button>
-                        <button class="filter-btn" onclick="loadHistorie('1year', this)">1J</button>
-                        <button class="filter-btn" onclick="loadHistorie('max', this)">Max</button>
+            <!-- Performance KPI Cards -->
+            <div class="performance-kpis" id="performanceKpis" style="display:none;">
+                <div class="kpi-grid">
+                    <div class="kpi-card kpi-valuation">
+                        <span class="kpi-label">📊 Gesamtwert</span>
+                        <span class="kpi-value" id="kpiValuation">—</span>
+                    </div>
+                    <div class="kpi-card kpi-unrealized">
+                        <span class="kpi-label">📈 Unrealisiert</span>
+                        <span class="kpi-value" id="kpiUnrealized">—</span>
+                        <span class="kpi-sub" id="kpiUnrealizedPct"></span>
+                    </div>
+                    <div class="kpi-card kpi-realized">
+                        <span class="kpi-label">💰 Realisiert</span>
+                        <span class="kpi-value" id="kpiRealized">—</span>
+                    </div>
+                    <div class="kpi-card kpi-dividends">
+                        <span class="kpi-label">🪙 Dividenden</span>
+                        <span class="kpi-value" id="kpiDividends">—</span>
+                    </div>
+                    <div class="kpi-card kpi-taxes">
+                        <span class="kpi-label">🏛️ Steuern</span>
+                        <span class="kpi-value" id="kpiTaxes">—</span>
+                    </div>
+                    <div class="kpi-card kpi-fees">
+                        <span class="kpi-label">💳 Gebühren</span>
+                        <span class="kpi-value" id="kpiFees">—</span>
                     </div>
                 </div>
-                <div class="historie-chart-wrap" style="height:480px;position:relative;">
-                    <div class="historie-loading" id="historieLoading" style="display:none;">
-                        <div class="spinner"></div>
-                        <p>Historische Kurse werden geladen...</p>
-                    </div>
-                    <canvas id="historieChart"></canvas>
+                <div class="kpi-interval" id="kpiInterval"></div>
+            </div>
+
+            <!-- Holdings Table (sortierbar) -->
+            <div class="chart-card holdings-section" id="holdingsSection" style="padding:1.5rem;">
+                <h3 class="chart-title">📋 Alle Positionen (Parqet)</h3>
+                <div class="holdings-tabs" style="margin-bottom:1rem;">
+                    <button class="filter-btn active" onclick="filterHoldings('active', this)">Aktiv</button>
+                    <button class="filter-btn" onclick="filterHoldings('sold', this)">Verkauft</button>
+                    <button class="filter-btn" onclick="filterHoldings('all', this)">Alle</button>
                 </div>
-                <div class="historie-legend" id="historieLegend"></div>
-                <div class="historie-summary" id="historieSummary"></div>
+                <div class="holdings-table-wrap" id="holdingsTableWrap"></div>
             </div>
         </section>
 

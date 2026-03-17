@@ -46,7 +46,7 @@ WEIGHTS = {
 }
 
 # Schwellenwerte
-BUY_THRESHOLD = 68
+BUY_THRESHOLD = 63
 SELL_THRESHOLD = 40
 
 # ─────────────────────────────────────────────────────────────
@@ -202,10 +202,14 @@ def calculate_score(
         calculated_factors.add("quantitative")
 
     # --- 7. Sentiment Score (7%) — A5: Makro-aware Fear&Greed ---
-    if fear_greed and fear_greed.value != 50:
+    if fear_greed and fear_greed.value is not None:
         fg_value = float(fear_greed.value)
-        # Basis: Fear&Greed direkt als Score (hoher Wert = Gier = positives Sentiment)
-        sentiment_base = fg_value
+        # Basis: Fear&Greed mit leichtem Spread um Neutral
+        # Neutrales Sentiment (40-60) sollte ~52-55 Score geben, nicht exakt F&G
+        if 40 <= fg_value <= 65:
+            sentiment_base = fg_value + 5  # Leichter Bonus für neutrale/leicht positive Werte
+        else:
+            sentiment_base = fg_value
 
         # A5: Makro-Kontext-Anpassung
         # In "Extreme Fear" (<20): Qualitätsaktien bekommen Contrarian-Bonus
@@ -215,7 +219,7 @@ def calculate_score(
         elif fg_value >= 80 and "valuation" in calculated_factors and breakdown.valuation_score <= 35:
             sentiment_base = max(0, sentiment_base - 15)  # Überhitzungswarnung
 
-        breakdown.sentiment_score = sentiment_base
+        breakdown.sentiment_score = min(100, sentiment_base)
         available_weight += WEIGHTS["sentiment"]
         calculated_factors.add("sentiment")
 
@@ -627,19 +631,19 @@ def _calc_technical_score(tech: TechnicalIndicators) -> float:
     if tech.rsi_14 is not None:
         rsi = tech.rsi_14
         if rsi < 25:
-            scores.append(85)  # Stark ueberverkauft
+            scores.append(85)  # Stark ueberverkauft (Kaufchance)
         elif rsi < 35:
-            scores.append(70)  # Ueberverkauft
+            scores.append(72)  # Ueberverkauft
         elif rsi < 45:
-            scores.append(60)
+            scores.append(62)  # Leicht ueberverkauft
         elif rsi <= 55:
-            scores.append(50)  # Neutral
+            scores.append(55)  # Neutral (nicht schlecht!)
         elif rsi <= 65:
-            scores.append(55)  # Leicht ueberkauft (noch ok)
+            scores.append(50)  # Leicht ueberkauft
         elif rsi <= 75:
-            scores.append(40)
+            scores.append(38)
         else:
-            scores.append(25)  # Stark ueberkauft
+            scores.append(22)  # Stark ueberkauft
 
     if tech.sma_cross is not None:
         if tech.sma_cross == "golden":
@@ -654,11 +658,11 @@ def _calc_technical_score(tech: TechnicalIndicators) -> float:
         if mom > 15:
             scores.append(85)
         elif mom > 8:
-            scores.append(72)
+            scores.append(74)
         elif mom > 2:
-            scores.append(60)
+            scores.append(63)
         elif mom >= -2:
-            scores.append(50)
+            scores.append(52)
         elif mom >= -8:
             scores.append(38)
         elif mom >= -15:

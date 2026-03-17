@@ -56,6 +56,8 @@ FastAPI Backend (lokal / Cloud Run)
 |---------|--------|--------------|
 | **AI Trade Advisor** | Pro + Grounding + **Function Calling** | 🧠 Agentischer Advisor — Gemini ruft selbst Tools auf |
 | **AI Chat** | Pro + **Function Calling** | 💬 Freie Portfolio-Diskussion im Browser |
+| **Voice-to-Action** | Pro + **Function Calling** + Audio | 🎙️ Sprachnachrichten nativ an Gemini (Telegram) |
+| **News-Kurator** | Flash + Grounding + **Structured Output** | 📡 Proaktive Portfolio-News-Alerts (4×/Tag) |
 | Score-Kommentare | Flash + **Structured Output** | KI-Kommentar pro Aktie bei jedem Refresh |
 | Earnings-Analyse | Pro + Grounding + **Structured Output** | `/earnings` — Echtzeit-Earnings via Search |
 | Portfolio-Chat | Pro + Grounding | Freitext-Fragen in Telegram |
@@ -92,6 +94,8 @@ Alle JSON-AI-Services nutzen `response_schema` — Gemini garantiert valides JSO
 | `/attribution` | P&L Attribution (Sektor, Top/Flop) |
 | `/earnings [TICKER]` | Earnings-Analyse (AI) |
 | `/risk` | Risiko-Szenarien (AI) |
+| `/news-alerts` | Portfolio-News prüfen (AI) |
+| 🎙️ Sprachnachricht | Voice-to-Action (AI) |
 | Freitext | Portfolio-Chat (AI) |
 
 ## API-Endpoints
@@ -144,6 +148,14 @@ Alle JSON-AI-Services nutzen `response_schema` — Gemini garantiert valides JSO
 | JSON Cache | Memory + Disk | FMP, yFinance, Fear&Greed (volatile) |
 | Parqet Cache | Memory + Disk | Positionen, Tokens (persistent) |
 
+## Sicherheit
+
+| Schutz | Konfiguration |
+|--------|---------------|
+| **Dashboard-Passwort** | `DASHBOARD_USER` + `DASHBOARD_PASSWORD` in `.env` |
+| **Telegram Webhook** | `TELEGRAM_WEBHOOK_SECRET` — Secret im URL-Pfad |
+| **Chat-ID Filter** | Bot antwortet nur auf konfigurierte `TELEGRAM_CHAT_ID` |
+
 ## Deployment
 
 ### Lokal
@@ -153,9 +165,14 @@ pip install -r requirements.txt
 python main.py  # → http://localhost:8000
 ```
 
-### Cloud Run (Windows)
-```powershell
-gcloud.cmd run deploy finanzbro --source . --region europe-west1 --allow-unauthenticated --memory 512Mi --timeout 300 --update-env-vars ENVIRONMENT=production,GCP_PROJECT_ID=job-automation-jonas
+### Cloud Run Service (Dashboard + Webhook)
+```bash
+./deploy.sh
+```
+
+### Cloud Run Job (täglicher Telegram-Report, kostenlos)
+```bash
+./deploy_job.sh  # Erstellt Job + Cloud Scheduler (15:45 CET)
 ```
 
 ### Environment (.env)
@@ -169,6 +186,11 @@ TELEGRAM_BOT_TOKEN=...
 TELEGRAM_CHAT_ID=...
 GEMINI_API_KEY=...
 
+# Sicherheit
+DASHBOARD_USER=...
+DASHBOARD_PASSWORD=...
+TELEGRAM_WEBHOOK_SECRET=...
+
 # Cloud Run (automatisch)
 ENVIRONMENT=production
 GCP_PROJECT_ID=...
@@ -179,8 +201,10 @@ GCP_PROJECT_ID=...
 | Job | Zeit | Funktion |
 |-----|------|----------|
 | Full Analyse | 16:15 | Refresh + Scoring + AI Report |
-| Intraday Kurse | alle 15min (Mo-Fr) | yFinance Batch (nur wenn WS < 80% Coverage) |
+| Intraday Kurse | alle 15min (Mo-Fr) | yFinance Batch |
 | Weekly Digest | Freitag 22:30 | Wöchentliche KI-Zusammenfassung |
+| News-Kurator | 09, 13, 17, 21 Uhr (Mo-Fr) | Portfolio-News-Alerts (Gemini Flash) |
+| Cloud Run Job | 15:45 (Cloud Scheduler) | Full Refresh → Telegram Report |
 
 ## Projektstruktur
 
@@ -193,7 +217,11 @@ FinanzBro/
 ├── database.py          # SQLite Persistence (WAL, 3 Tabellen)
 ├── cache_manager.py     # Memory+Disk Cache
 ├── logging_config.py    # structlog (JSON/Console)
-├── Dockerfile           # Cloud Run Container
+├── Dockerfile           # Cloud Run Service Container
+├── Dockerfile.job       # Cloud Run Job Container
+├── run_job.py           # Job Entry Point (Refresh → Report)
+├── middleware/
+│   └── auth.py          # Basic Auth Middleware
 ├── engine/
 │   ├── scorer.py        # 10-Faktor Score-Berechnung
 │   ├── analysis.py      # Report-Generierung + Score-Historie
@@ -226,6 +254,7 @@ FinanzBro/
 │   ├── earnings_ai.py   # Earnings-Analyse (Structured Output)
 │   ├── score_commentary.py  # AI Score-Kommentare (Structured Output)
 │   ├── weekly_digest.py # Wöchentlicher Digest (Flash)
+│   ├── news_kurator.py  # Proaktive Portfolio-News-Alerts (Structured Output)
 │   ├── tech_radar_ai.py # Tech-Empfehlungen (AI)
 │   ├── analyst_tracker.py   # Analysten Track Record
 │   └── currency_converter.py
@@ -236,10 +265,10 @@ FinanzBro/
 │   ├── analytics.py     # Erweiterte Analysen + Attribution
 │   ├── parqet_oauth.py  # OAuth2 PKCE
 │   ├── streaming.py     # SSE Preis-Stream
-│   └── telegram.py      # Telegram Webhook
+│   └── telegram.py      # Telegram Webhook (mit Secret-Token)
 ├── static/
 │   ├── index.html       # Dashboard UI
 │   ├── app.js           # Frontend-Logic
 │   └── styles.css       # Styling
-└── tests/               # 300+ pytest Tests
+└── tests/               # 350+ pytest Tests
 ```

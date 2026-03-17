@@ -841,7 +841,7 @@ function switchTab(tab) {
     }
     // Load historie tab data on first view
     if (tab === 'historie') {
-        loadHistorie('6month');
+        loadPerformanceKPIs();
     }
 }
 
@@ -2222,6 +2222,167 @@ const HISTORIE_COLORS = [
     '#10b981', '#7c3aed', '#0891b2', '#65a30d', '#dc2626',
 ];
 
+// ==================== Performance KPIs ====================
+let _performanceData = null;
+
+function formatEur(val) {
+    if (val === null || val === undefined) return '—';
+    return val.toLocaleString('de-DE', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+async function loadPerformanceKPIs() {
+    if (_performanceData) {
+        renderPerformanceKPIs(_performanceData);
+        return;
+    }
+    try {
+        const res = await fetch('/api/performance');
+        if (!res.ok) return;
+        _performanceData = await res.json();
+        if (_performanceData.error) { _performanceData = null; return; }
+        renderPerformanceKPIs(_performanceData);
+    } catch (e) {
+        console.error('Performance KPIs laden fehlgeschlagen:', e);
+    }
+}
+
+function renderPerformanceKPIs(data) {
+    const { kpis, holdingsActive, holdingsSold, activeHoldings, soldHoldings } = data;
+    const container = document.getElementById('performanceKpis');
+    if (!container) return;
+
+    // KPI Values
+    document.getElementById('kpiValuation').textContent = formatEur(kpis.valuation);
+
+    const unrealGain = kpis.unrealizedGains?.gainGross || 0;
+    const unrealPct = kpis.unrealizedGains?.returnGross || 0;
+    const unrealEl = document.getElementById('kpiUnrealized');
+    unrealEl.textContent = (unrealGain >= 0 ? '+' : '') + formatEur(unrealGain);
+    unrealEl.style.color = unrealGain >= 0 ? '#22c55e' : '#ef4444';
+    document.getElementById('kpiUnrealizedPct').textContent = `(${unrealPct >= 0 ? '+' : ''}${unrealPct.toFixed(1)}%)`;
+
+    const realGain = kpis.realizedGains?.gainGross || 0;
+    const realEl = document.getElementById('kpiRealized');
+    realEl.textContent = (realGain >= 0 ? '+' : '') + formatEur(realGain);
+    realEl.style.color = realGain >= 0 ? '#22c55e' : '#ef4444';
+
+    document.getElementById('kpiDividends').textContent = formatEur(kpis.dividends?.gainGross || 0);
+    document.getElementById('kpiTaxes').textContent = formatEur(kpis.taxes);
+    document.getElementById('kpiFees').textContent = formatEur(kpis.fees);
+
+    // Interval
+    const intervalEl = document.getElementById('kpiInterval');
+    if (kpis.interval) {
+        intervalEl.textContent = `Zeitraum: ${kpis.interval.start} → ${kpis.interval.end} | ${activeHoldings} aktiv, ${soldHoldings} verkauft`;
+    }
+
+    container.style.display = 'block';
+
+    // Holdings table
+    renderHoldingsTable(holdingsActive);
+    document.getElementById('holdingsSection').style.display = 'block';
+}
+
+let _currentHoldingsSort = { column: 'currentValue', dir: 'desc' };
+let _currentHoldingsFilter = 'active';
+
+function filterHoldings(filter, btn) {
+    if (!_performanceData) return;
+    _currentHoldingsFilter = filter;
+    if (btn) {
+        btn.parentElement.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+    }
+    const holdings = filter === 'active' ? _performanceData.holdingsActive
+        : filter === 'sold' ? _performanceData.holdingsSold
+        : _performanceData.holdings;
+    renderHoldingsTable(holdings);
+}
+
+function sortHoldings(column) {
+    if (_currentHoldingsSort.column === column) {
+        _currentHoldingsSort.dir = _currentHoldingsSort.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+        _currentHoldingsSort = { column, dir: 'desc' };
+    }
+    filterHoldings(_currentHoldingsFilter);
+}
+
+function renderHoldingsTable(holdings) {
+    const wrap = document.getElementById('holdingsTableWrap');
+    if (!wrap || !holdings) return;
+
+    if (holdings.length === 0) {
+        wrap.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:1rem;">Keine Positionen gefunden</p>';
+        return;
+    }
+
+    // Sort holdings
+    const { column, dir } = _currentHoldingsSort;
+    const mult = dir === 'asc' ? 1 : -1;
+    const sorted = [...holdings].filter(h => h.type !== 'cash').sort((a, b) => {
+        switch (column) {
+            case 'name': return mult * (a.name || '').localeCompare(b.name || '');
+            case 'shares': return mult * ((a.shares || 0) - (b.shares || 0));
+            case 'purchaseValue': return mult * ((a.purchaseValue || 0) - (b.purchaseValue || 0));
+            case 'currentValue': return mult * ((a.currentValue || 0) - (b.currentValue || 0));
+            case 'gain': {
+                const gA = a.isSold ? (a.realizedGainGross || 0) : (a.unrealizedGainGross || 0);
+                const gB = b.isSold ? (b.realizedGainGross || 0) : (b.unrealizedGainGross || 0);
+                return mult * (gA - gB);
+            }
+            case 'gainPct': {
+                const pA = a.isSold ? (a.purchaseValue > 0 ? (a.realizedGainGross || 0) / a.purchaseValue * 100 : 0) : (a.unrealizedReturnGross || 0);
+                const pB = b.isSold ? (b.purchaseValue > 0 ? (b.realizedGainGross || 0) / b.purchaseValue * 100 : 0) : (b.unrealizedReturnGross || 0);
+                return mult * (pA - pB);
+            }
+            case 'dividends': return mult * ((a.dividendsGross || 0) - (b.dividendsGross || 0));
+            case 'taxes': return mult * ((a.taxes || 0) - (b.taxes || 0));
+            default: return 0;
+        }
+    });
+
+    const arrow = (col) => {
+        if (_currentHoldingsSort.column !== col) return '';
+        return _currentHoldingsSort.dir === 'asc' ? ' ▲' : ' ▼';
+    };
+    const thClass = (col) => _currentHoldingsSort.column === col ? 'sortable sorted' : 'sortable';
+
+    let html = `<table class="holdings-table">
+        <thead><tr>
+            <th></th>
+            <th class="${thClass('name')}" onclick="sortHoldings('name')">Position${arrow('name')}</th>
+            <th class="${thClass('shares')}" onclick="sortHoldings('shares')" style="text-align:right">Stk.${arrow('shares')}</th>
+            <th class="${thClass('purchaseValue')}" onclick="sortHoldings('purchaseValue')" style="text-align:right">Kaufwert${arrow('purchaseValue')}</th>
+            <th class="${thClass('currentValue')}" onclick="sortHoldings('currentValue')" style="text-align:right">Aktuell${arrow('currentValue')}</th>
+            <th class="${thClass('gain')}" onclick="sortHoldings('gain')" style="text-align:right">Gewinn${arrow('gain')}</th>
+            <th class="${thClass('dividends')}" onclick="sortHoldings('dividends')" style="text-align:right">Div.${arrow('dividends')}</th>
+            <th class="${thClass('taxes')}" onclick="sortHoldings('taxes')" style="text-align:right">Steuern${arrow('taxes')}</th>
+        </tr></thead><tbody>`;
+
+    for (const h of sorted) {
+        const gain = h.isSold ? h.realizedGainGross : h.unrealizedGainGross;
+        const gainPct = h.isSold ? (h.purchaseValue > 0 ? (gain / h.purchaseValue * 100) : 0) : h.unrealizedReturnGross;
+        const gainColor = gain >= 0 ? '#22c55e' : '#ef4444';
+        const gainSign = gain >= 0 ? '+' : '';
+        const soldBadge = h.isSold ? '<span style="color:#94a3b8;font-size:0.7rem;margin-left:4px">✗</span>' : '';
+
+        html += `<tr${h.isSold ? ' style="opacity:0.6"' : ''}>
+            <td><img src="${h.logo}" alt="" style="width:24px;height:24px;border-radius:4px;" onerror="this.style.display='none'"></td>
+            <td><strong>${h.name || h.ticker}</strong>${soldBadge}<br><span style="color:#94a3b8;font-size:0.75rem">${h.ticker}</span></td>
+            <td style="text-align:right">${h.shares > 0 ? h.shares.toFixed(h.shares < 10 ? 2 : 0) : '—'}</td>
+            <td style="text-align:right">${formatEur(h.purchaseValue)}</td>
+            <td style="text-align:right">${h.currentValue > 0 ? formatEur(h.currentValue) : '—'}</td>
+            <td style="text-align:right;color:${gainColor}">${gainSign}${formatEur(gain)}<br><span style="font-size:0.75rem">${gainSign}${gainPct.toFixed(1)}%</span></td>
+            <td style="text-align:right">${h.dividendsGross > 0 ? formatEur(h.dividendsGross) : '—'}</td>
+            <td style="text-align:right">${h.taxes > 0 ? formatEur(h.taxes) : '—'}</td>
+        </tr>`;
+    }
+
+    html += '</tbody></table>';
+    wrap.innerHTML = html;
+}
+
 async function loadHistorie(period, btn) {
     historieCurrentPeriod = period;
 
@@ -2263,23 +2424,30 @@ async function loadHistorie(period, btn) {
     }
 }
 
+// Ticker filter state
+let _historieFilteredTickers = new Set(); // empty = show all
+let _lastHistorieData = null;
+
 function renderHistorieChart(data) {
     const ctx = document.getElementById('historieChart');
     if (!ctx) return;
     if (historieChartInstance) historieChartInstance.destroy();
+    _lastHistorieData = data;
 
-    const { dates, stocks, total, total_cost } = data;
+    const { dates, stocks, total, total_cost, pnl } = data;
     const tickers = Object.keys(stocks);
 
-    // Build datasets: one stacked area per stock
+    // Build datasets: one stacked area per stock (filtered)
     const datasets = [];
+    const showAll = _historieFilteredTickers.size === 0;
     tickers.forEach((ticker, i) => {
         const color = HISTORIE_COLORS[i % HISTORIE_COLORS.length];
         const stockData = stocks[ticker];
+        const hidden = !showAll && !_historieFilteredTickers.has(ticker);
         datasets.push({
             label: `${ticker} (${stockData.name})`,
             data: stockData.values,
-            backgroundColor: color + '40',  // 25% opacity
+            backgroundColor: color + '40',
             borderColor: color,
             borderWidth: 1,
             fill: true,
@@ -2287,7 +2455,8 @@ function renderHistorieChart(data) {
             tension: 0.3,
             pointRadius: 0,
             pointHoverRadius: 3,
-            order: tickers.length - i,  // Largest at bottom
+            order: tickers.length - i,
+            hidden: hidden,
         });
     });
 
@@ -2318,6 +2487,39 @@ function renderHistorieChart(data) {
             pointRadius: 0,
             pointHoverRadius: 3,
             order: -1,
+        });
+    }
+
+    // P&L area (green when profit, red when loss)
+    if (pnl && pnl.length > 0) {
+        datasets.push({
+            label: 'Gewinn',
+            data: pnl.map(v => v >= 0 ? v : null),
+            backgroundColor: 'rgba(34, 197, 94, 0.18)',
+            borderColor: 'rgba(34, 197, 94, 0.7)',
+            borderWidth: 1.5,
+            fill: 'origin',
+            tension: 0.3,
+            pointRadius: 0,
+            pointHoverRadius: 0,
+            order: -2,
+            yAxisID: 'pnl',
+            spanGaps: true,
+        });
+
+        datasets.push({
+            label: 'Verlust',
+            data: pnl.map(v => v < 0 ? v : null),
+            backgroundColor: 'rgba(239, 68, 68, 0.18)',
+            borderColor: 'rgba(239, 68, 68, 0.7)',
+            borderWidth: 1.5,
+            fill: 'origin',
+            tension: 0.3,
+            pointRadius: 0,
+            pointHoverRadius: 0,
+            order: -3,
+            yAxisID: 'pnl',
+            spanGaps: true,
         });
     }
 
@@ -2357,6 +2559,27 @@ function renderHistorieChart(data) {
                         font: { family: 'Inter', size: 10 },
                         callback: v => formatCurrency(v),
                     }
+                },
+                pnl: {
+                    display: true,
+                    position: 'right',
+                    beginAtZero: true,
+                    grid: { display: false },
+                    ticks: {
+                        color: '#64748b',
+                        font: { family: 'Inter', size: 10 },
+                        callback: v => {
+                            if (v === 0) return '0';
+                            return (v >= 0 ? '+' : '') + formatCurrency(v);
+                        },
+                        maxTicksLimit: 6,
+                    },
+                    title: {
+                        display: true,
+                        text: 'P&L',
+                        color: '#94a3b8',
+                        font: { size: 10 },
+                    },
                 }
             },
             plugins: {
@@ -2400,8 +2623,11 @@ function renderHistorieChart(data) {
     // Render legend
     _renderHistorieLegend(tickers, stocks, total);
 
-    // Render summary
+    // Render summary (use Performance API data if available)
     _renderHistorieSummary(dates, total, total_cost);
+
+    // Render ticker filter
+    _renderTickerFilter(tickers, stocks);
 }
 
 function _renderHistorieLegend(tickers, stocks, total) {
@@ -2433,13 +2659,25 @@ function _renderHistorieSummary(dates, total, totalCost) {
     const lastVal = total[total.length - 1] || 0;
     const change = lastVal - firstVal;
     const changePct = firstVal > 0 ? (change / firstVal * 100) : 0;
-
-    const costFirst = totalCost ? (totalCost[0] || 0) : 0;
-    const costLast = totalCost ? (totalCost[totalCost.length - 1] || 0) : 0;
-    const totalPnl = lastVal - costLast;
-    const totalPnlPct = costLast > 0 ? (totalPnl / costLast * 100) : 0;
-
     const sign = change >= 0 ? '+' : '';
+    const changeClass = change >= 0 ? 'positive' : 'negative';
+
+    // Use Performance API for accurate P&L (if available)
+    let totalPnl, totalPnlPct;
+    if (_performanceData && _performanceData.kpis) {
+        const kpis = _performanceData.kpis;
+        const unrealized = kpis.unrealizedGains?.gainGross || 0;
+        const realized = kpis.realizedGains?.gainGross || 0;
+        totalPnl = unrealized + realized;
+        // Invested = valuation - unrealized gains
+        const invested = (kpis.valuation || lastVal) - unrealized;
+        totalPnlPct = invested > 0 ? (totalPnl / invested * 100) : 0;
+    } else {
+        const costLast = totalCost ? (totalCost[totalCost.length - 1] || 0) : 0;
+        totalPnl = lastVal - costLast;
+        totalPnlPct = costLast > 0 ? (totalPnl / costLast * 100) : 0;
+    }
+
     const pnlSign = totalPnl >= 0 ? '+' : '';
     const pnlClass = totalPnl >= 0 ? 'positive' : 'negative';
 
@@ -2453,17 +2691,59 @@ function _renderHistorieSummary(dates, total, totalCost) {
                 <span class="historie-summary-value">${startDate[2]}.${startDate[1]}.${startDate[0]} — ${endDate[2]}.${endDate[1]}.${endDate[0]}</span>
             </div>
             <div class="historie-summary-item">
-                <span class="historie-summary-label">Wertentwicklung</span>
-                <span class="historie-summary-value ${pnlClass}">${sign}${formatCurrency(change)} (${sign}${changePct.toFixed(1)}%)</span>
+                <span class="historie-summary-label">Wertentwicklung (Zeitraum)</span>
+                <span class="historie-summary-value ${changeClass}">${sign}${formatCurrency(change)} (${sign}${changePct.toFixed(1)}%)</span>
             </div>
             <div class="historie-summary-item">
                 <span class="historie-summary-label">Aktueller Wert</span>
                 <span class="historie-summary-value">${formatCurrency(lastVal)}</span>
             </div>
             <div class="historie-summary-item">
-                <span class="historie-summary-label">Gesamt P&L</span>
+                <span class="historie-summary-label">Gesamt P&L${_performanceData ? ' (Parqet)' : ''}</span>
                 <span class="historie-summary-value ${pnlClass}">${pnlSign}${formatCurrency(totalPnl)} (${pnlSign}${totalPnlPct.toFixed(1)}%)</span>
             </div>
         </div>
     `;
+}
+
+function _renderTickerFilter(tickers, stocks) {
+    // Insert filter into historie-controls if not already there
+    let filterWrap = document.getElementById('historieTickerFilter');
+    if (!filterWrap) {
+        const controls = document.querySelector('.historie-controls');
+        if (!controls) return;
+        filterWrap = document.createElement('div');
+        filterWrap.id = 'historieTickerFilter';
+        filterWrap.className = 'ticker-filter';
+        controls.parentElement.appendChild(filterWrap);
+    }
+
+    const showAll = _historieFilteredTickers.size === 0;
+    let html = `<button class="ticker-chip ${showAll ? 'active' : ''}" onclick="toggleTickerFilter('__ALL__', this)">Alle</button>`;
+    tickers.forEach((ticker, i) => {
+        const color = HISTORIE_COLORS[i % HISTORIE_COLORS.length];
+        const active = showAll || _historieFilteredTickers.has(ticker);
+        html += `<button class="ticker-chip ${active ? 'active' : ''}" style="--chip-color:${color}" onclick="toggleTickerFilter('${ticker}', this)">${ticker}</button>`;
+    });
+    filterWrap.innerHTML = html;
+}
+
+function toggleTickerFilter(ticker, btn) {
+    if (ticker === '__ALL__') {
+        _historieFilteredTickers.clear();
+    } else {
+        if (_historieFilteredTickers.has(ticker)) {
+            _historieFilteredTickers.delete(ticker);
+            // If none selected, revert to show all
+            if (_historieFilteredTickers.size === 0) {
+                // already empty = show all
+            }
+        } else {
+            _historieFilteredTickers.add(ticker);
+        }
+    }
+    // Re-render chart with current data
+    if (_lastHistorieData) {
+        renderHistorieChart(_lastHistorieData);
+    }
 }

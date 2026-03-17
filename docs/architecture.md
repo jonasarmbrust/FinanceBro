@@ -14,6 +14,7 @@ FinanzBro/
 ├── database.py             # SQLite Persistenz (WAL, Score-History, Snapshots)
 ├── cache_manager.py        # Thread-safe Memory+Disk Cache
 ├── logging_config.py       # structlog (JSON in Production, Console in Dev)
+├── run_job.py              # Cloud Run Job Entry Point (tägliche Analyse + Report)
 │
 ├── routes/
 │   ├── portfolio.py        # GET /api/portfolio, /api/stock/{ticker}
@@ -62,6 +63,9 @@ FinanzBro/
 │   ├── currency.py         # EUR/USD/DKK/GBP Wechselkurse
 │   ├── yfinance_screener.py # Tech-Aktien Screening (yfinance)
 │   └── demo_data.py        # Synthetische Demo-Daten
+│
+├── middleware/
+│   └── auth.py             # Basic Auth Middleware (Passwortschutz)
 │
 ├── static/                 # Frontend (HTML/JS/CSS)
 └── tests/                  # 300+ pytest Tests
@@ -162,13 +166,27 @@ graph LR
 - Verwaiste Dateien aus JSON→SQLite Migration werden aufgeräumt
 - Activities-Cache auf Disk begrenzt auf 500 Einträge (~12 Monate)
 
+## Sicherheit
+
+| Schutzmaßnahme | Konfiguration | Schützt |
+|----------------|---------------|---------|
+| **Basic Auth** | `DASHBOARD_USER` + `DASHBOARD_PASSWORD` in `.env` | Dashboard + alle API-Endpoints |
+| **Webhook Secret** | `TELEGRAM_WEBHOOK_SECRET` in `.env` | Telegram-Webhook (Secret im URL-Pfad) |
+| **Chat-ID Filter** | `TELEGRAM_CHAT_ID` in `.env` | Bot antwortet nur auf deine Chat-ID |
+| **timing-safe compare** | `secrets.compare_digest()` | Verhindert Timing-Attacks auf Passwort |
+
+- Auth-Middleware in `middleware/auth.py` (Starlette BaseHTTPMiddleware)
+- Ausgenommen: `/health` (Cloud Run Health Check), `/api/telegram/webhook/{secret}`
+- Ohne `DASHBOARD_USER`/`DASHBOARD_PASSWORD` → kein Passwortschutz (z.B. lokal)
+
 ## Cloud Run Deployment
 
+### Service (Dashboard + Webhook)
 ```
 Docker Image (python:3.12-slim, 1 Worker)
   ├── App-Code + SQLite DB
   ├── cache/ (Stale Cache Fallback)
-  └── Env-Vars (API Keys, OAuth2 Tokens)
+  └── Env-Vars (API Keys, OAuth2 Tokens, Auth)
 
 Konfiguration:
   Memory:        512 Mi
@@ -178,6 +196,20 @@ Konfiguration:
   Region:        europe-west1
 ```
 
+### Job (tägliche Analyse + Telegram Report)
+```
+Docker Image (Dockerfile.job, python:3.12-slim)
+  └── CMD: python run_job.py
+
+Ablauf:
+  1. Full Refresh (Parqet, FMP, yfinance, Technicals, Scoring)
+  2. Daten-Validierung (Positionen + Scores vorhanden?)
+  3. Gemini AI Research → Telegram Report
+
+Trigger: Cloud Scheduler → 15:45 CET täglich
+Kosten:  0 €/Monat (Free Tier)
+```
+
 ### Scheduler (APScheduler)
 
 | Job | Zeit | Funktion |
@@ -185,3 +217,4 @@ Konfiguration:
 | Full Analyse | 16:15 CET | Refresh + Scoring + AI Report |
 | Intraday Kurse | alle 15min Mo-Fr 8-22h | yFinance Batch |
 | Weekly Digest | Freitag 22:30 | KI-Zusammenfassung |
+| Cloud Run Job | 15:45 CET (Cloud Scheduler) | Full Refresh → Telegram Report |

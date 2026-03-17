@@ -30,15 +30,24 @@ async def handle_update(update: dict) -> None:
     from services.telegram import send_message
 
     message = update.get("message", {})
-    text = message.get("text", "").strip()
     chat_id = str(message.get("chat", {}).get("id", ""))
 
-    if not text or not chat_id:
+    if not chat_id:
         return
 
     # Nur erlaubte Chat-ID (Sicherheit)
     if chat_id != settings.TELEGRAM_CHAT_ID:
         logger.warning(f"Unbekannte Chat-ID: {chat_id} (erwartet: {settings.TELEGRAM_CHAT_ID})")
+        return
+
+    # Voice-Nachricht? → Audio-Handler
+    voice = message.get("voice")
+    if voice:
+        await _handle_voice_memo(chat_id, voice, message.get("caption", ""))
+        return
+
+    text = message.get("text", "").strip()
+    if not text:
         return
 
     # Command-Router
@@ -54,6 +63,8 @@ async def handle_update(update: dict) -> None:
         await _cmd_refresh(chat_id)
     elif cmd == "/news":
         await _cmd_news(chat_id)
+    elif cmd == "/news-alerts":
+        await _cmd_news_alerts(chat_id)
     elif cmd == "/earnings":
         await _cmd_earnings(chat_id)
     elif cmd == "/risk":
@@ -92,7 +103,9 @@ async def _cmd_start(chat_id: str):
         "  /score AAPL — Score einer Aktie\n"
         "  /refresh — Daten aktualisieren\n"
         "  /news — Marktanalyse (Gemini Pro)\n"
+        "  /news-alerts — Portfolio-News prüfen\n"
         "  /wissen — Lern-Tipps & Projekt-Wissen\n"
+        "  🎙️ Sprachnachricht — Voice-to-Action\n"
         "  /help — Befehlsübersicht\n",
         chat_id=chat_id,
     )
@@ -109,9 +122,11 @@ async def _cmd_help(chat_id: str):
         "  /earnings — Earnings-Analyse\n"
         "  /risk — Risiko-Szenarien\n"
         "  /news — Marktanalyse\n"
+        "  /news-alerts — Portfolio-News prüfen\n"
         "  /wissen — Lern-Tipps & Projekt-Wissen\n"
         "  /refresh — Full Refresh starten\n"
         "  /help — Diese Übersicht\n\n"
+        "🎙️ Sende eine Sprachnachricht für Voice-to-Action!\n"
         "💬 Oder einfach eine Frage schreiben!",
         chat_id=chat_id,
     )
@@ -834,4 +849,238 @@ async def _cmd_wissen_quiz(chat_id: str):
     except Exception as e:
         logger.error(f"/wissen quiz fehlgeschlagen: {e}")
         await send_message(f"❌ Quiz fehlgeschlagen: {e}", chat_id=chat_id)
+
+
+# ─────────────────────────────────────────────────────────────
+# Feature: Voice-to-Action (Sprachnachrichten)
+# ─────────────────────────────────────────────────────────────
+
+# Max. Dateigröße für Sprachnachrichten (20 MB Telegram-Limit)
+_MAX_VOICE_SIZE = 20 * 1024 * 1024
+
+
+async def _handle_voice_memo(chat_id: str, voice: dict, caption: str = ""):
+    """Verarbeitet eine Telegram-Sprachnachricht.
+
+    Lädt die Audio-Datei herunter und sendet sie nativ an Gemini
+    zur Analyse mit Portfolio-Kontext.
+
+    Args:
+        chat_id: Telegram Chat-ID
+        voice: Telegram Voice-Objekt (file_id, duration, file_size etc.)
+        caption: Optionale Text-Caption zur Sprachnachricht
+    """
+    from services.telegram import send_message, download_telegram_file
+
+    if not settings.gemini_configured:
+        await send_message(
+            "🎙️ Sprachnachrichten benötigen Gemini API.\n"
+            "Bitte GEMINI_API_KEY in .env setzen.",
+            chat_id=chat_id,
+        )
+        return
+
+    # Dateigröße prüfen
+    file_size = voice.get("file_size", 0)
+    if file_size > _MAX_VOICE_SIZE:
+        await send_message(
+            "⚠️ Sprachnachricht zu groß. Bitte halte dich kürzer (max 2 Min).",
+            chat_id=chat_id,
+        )
+        return
+
+    duration = voice.get("duration", 0)
+    await send_message(
+        f"🎙️ Sprachnachricht empfangen ({duration}s). Analysiere...",
+        chat_id=chat_id,
+    )
+
+    try:
+        # Audio herunterladen
+        file_id = voice["file_id"]
+        audio_bytes = await download_telegram_file(file_id)
+
+        # Gemini-Analyse
+        result = await _process_voice_with_gemini(audio_bytes, caption)
+
+        # Auf 4000 Zeichen begrenzen (Telegram-Limit)
+        if len(result) > 4000:
+            result = result[:3950] + "\n\n_(gekürzt)_"
+
+        await send_message(f"🎙️ *Voice-Analyse*\n\n{result}", chat_id=chat_id)
+        logger.info(f"✅ Voice-Memo verarbeitet ({duration}s, {len(audio_bytes)} Bytes)")
+
+    except Exception as e:
+        logger.error(f"Voice-Memo fehlgeschlagen: {e}")
+        await send_message(
+            f"❌ Sprachnachricht konnte nicht verarbeitet werden: {e}",
+            chat_id=chat_id,
+        )
+
+
+async def _process_voice_with_gemini(audio_bytes: bytes, caption: str = "") -> str:
+    """Sendet Audio nativ an Gemini mit Portfolio-Kontext + Function Calling.
+
+    Gemini versteht Audio direkt — kein Transkriptions-Zwischenschritt nötig.
+    Die KI kann per Function Calling auf Portfolio-Daten, Scores und
+    Sektor-Impact zugreifen.
+
+    Args:
+        audio_bytes: OGG-Audio-Datei als Bytes
+        caption: Optionaler Zusatztext
+
+    Returns:
+        KI-Antwort als Text
+    """
+    import json
+    from services.vertex_ai import get_client, get_cached_content
+    from google.genai.types import (
+        Tool, GoogleSearch, FunctionDeclaration, Part, Content,
+    )
+    from state import portfolio_data
+
+    client = get_client()
+    summary = portfolio_data.get("summary")
+
+    # Portfolio-Kontext
+    portfolio_context = _get_portfolio_context()
+
+    system_prompt = (
+        "Du bist FinanzBro, ein intelligenter Portfolio-Berater. "
+        "Der User hat dir eine Sprachnachricht gesendet. "
+        "Höre die Nachricht an, verstehe den Intent und antworte auf Deutsch.\n\n"
+        "Du hast Zugriff auf Tools um Portfolio-Daten und Aktien-Scores abzurufen. "
+        "Nutze sie wenn der User nach spezifischen Aktien oder Portfolio-Daten fragt.\n\n"
+    )
+    if portfolio_context:
+        system_prompt += f"PORTFOLIO-KONTEXT:\n{portfolio_context}\n\n"
+    system_prompt += (
+        "REGELN:\n"
+        "- Antworte auf Deutsch, klar und direkt\n"
+        "- Nutze Google Search für aktuelle Marktdaten wenn nötig\n"
+        "- Beziehe dich auf das Portfolio wenn relevant\n"
+        "- Sei ehrlich über Unsicherheiten und Risiken\n"
+        "- Max 1000 Zeichen Antwort\n"
+    )
+
+    # Tool-Definitionen (wiederverwendet aus trade_advisor)
+    from services.trade_advisor import _build_tool_declarations, _execute_tool_call
+    tool_declarations = [
+        FunctionDeclaration(**td) for td in _build_tool_declarations()
+    ]
+
+    config = {
+        "tools": [
+            Tool(google_search=GoogleSearch()),
+            Tool(function_declarations=tool_declarations),
+        ],
+        "system_instruction": system_prompt,
+    }
+
+    cached = get_cached_content()
+    if cached:
+        config["cached_content"] = cached
+
+    # Content: Audio + optionale Caption
+    parts = [
+        Part.from_bytes(data=audio_bytes, mime_type="audio/ogg"),
+    ]
+    if caption:
+        parts.append(Part.from_text(f"Zusatzinfo vom User: {caption}"))
+    parts.append(Part.from_text(
+        "Bitte höre die Sprachnachricht an und beantworte die Frage/Anfrage "
+        "des Users. Nutze die verfügbaren Tools wenn du Daten brauchst."
+    ))
+
+    # Gemini-Call
+    response = client.models.generate_content(
+        model="gemini-2.5-pro",
+        contents=[Content(role="user", parts=parts)],
+        config=config,
+    )
+
+    # Function Calling Loop (max 3 Runden)
+    all_contents = [
+        Content(role="user", parts=parts),
+        response.candidates[0].content,
+    ]
+
+    for round_num in range(3):
+        function_calls = [
+            p for p in response.candidates[0].content.parts
+            if p.function_call
+        ]
+        if not function_calls:
+            break
+
+        logger.info(f"🎙️ Voice Tool-Runde {round_num + 1}: {len(function_calls)} Calls")
+
+        # Tool-Calls ausführen
+        tool_results = []
+        for fc_part in function_calls:
+            fc = fc_part.function_call
+            tool_name = fc.name
+            tool_args = dict(fc.args) if fc.args else {}
+
+            # Für get_stock_score: Live-Score berechnen
+            if tool_name == "get_stock_score" and summary:
+                from services.trade_advisor import _get_or_calculate_score
+                ticker = tool_args.get("ticker", "")
+                score_info = await _get_or_calculate_score(ticker, summary)
+                result_str = json.dumps(score_info, default=str)
+            else:
+                # Portfolio-Kontext für andere Tools
+                portfolio_ctx = {}
+                if summary:
+                    from services.trade_advisor import _build_portfolio_context
+                    portfolio_ctx = _build_portfolio_context(summary, "", "buy", None)
+                result_str = _execute_tool_call(
+                    tool_name, tool_args, {}, portfolio_ctx,
+                )
+
+            tool_results.append(Part.from_function_response(
+                name=tool_name,
+                response={"result": result_str},
+            ))
+
+        all_contents.append(Content(role="user", parts=tool_results))
+
+        response = client.models.generate_content(
+            model="gemini-2.5-pro",
+            contents=all_contents,
+            config=config,
+        )
+        all_contents.append(response.candidates[0].content)
+
+    return response.text.strip() if response.text else "Leider konnte ich die Sprachnachricht nicht verarbeiten."
+
+
+# ─────────────────────────────────────────────────────────────
+# Feature: /news-alerts — Proaktive Portfolio-News
+# ─────────────────────────────────────────────────────────────
+
+async def _cmd_news_alerts(chat_id: str):
+    """Prüft auf portfoliorelevante Breaking News."""
+    from services.telegram import send_message
+
+    if not settings.gemini_configured:
+        await send_message(
+            "⚠️ News-Alerts benötigen Gemini API-Key.",
+            chat_id=chat_id,
+        )
+        return
+
+    await send_message("📡 Prüfe Portfolio-News...", chat_id=chat_id)
+
+    try:
+        from services.news_kurator import check_portfolio_news
+        sent = await check_portfolio_news(force=True)
+        if not sent:
+            await send_message(
+                "✅ Keine neuen portfoliorelevanten Nachrichten gefunden.",
+                chat_id=chat_id,
+            )
+    except Exception as e:
+        logger.error(f"/news-alerts fehlgeschlagen: {e}")
+        await send_message(f"❌ News-Check fehlgeschlagen: {e}", chat_id=chat_id)
 

@@ -18,6 +18,7 @@ from models import (
     Rating,
     StockScore,
 )
+from engine.scorer import BUY_THRESHOLD, SELL_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
@@ -97,10 +98,10 @@ def build_analysis_report(
     # Portfolio-Gesamtscore (gewichtet nach Positionsgröße)
     portfolio_score = round(score_sum / weight_sum, 1) if weight_sum > 0 else 50.0
 
-    # Portfolio-Rating
-    if portfolio_score >= 70:
+    # Portfolio-Rating (synchron mit scorer.py Schwellenwerten)
+    if portfolio_score >= BUY_THRESHOLD:
         portfolio_rating = Rating.BUY
-    elif portfolio_score < 40:
+    elif portfolio_score < SELL_THRESHOLD:
         portfolio_rating = Rating.SELL
     else:
         portfolio_rating = Rating.HOLD

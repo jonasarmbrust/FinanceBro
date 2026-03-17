@@ -74,7 +74,7 @@ class TestScoreThresholds:
     """Stellt sicher, dass Buy/Hold/Sell Schwellenwerte korrekt sind."""
 
     def test_buy_threshold(self):
-        assert BUY_THRESHOLD == 68
+        assert BUY_THRESHOLD == 63
 
     def test_sell_threshold(self):
         assert SELL_THRESHOLD == 40
@@ -213,7 +213,7 @@ class TestTechnicalScore:
         """Überverkauft (RSI < 30) sollte zu höherem Score führen (Kaufchance)."""
         tech = TechnicalIndicators(rsi_14=22)
         score = _calc_technical_score(tech)
-        assert score >= 70
+        assert score >= 75
 
 
 class TestGrowthScore:
@@ -316,3 +316,38 @@ class TestCalculateScore:
         for field in ['analyst_score', 'quantitative_score', 'technical_score']:
             val = getattr(result.breakdown, field)
             assert 0 <= val <= 100, f"{field} out of range: {val}"
+
+    def test_good_stock_gets_buy(self):
+        """Eine typisch gute Aktie (AAPL/MSFT-Level) sollte BUY bekommen."""
+        fd = FundamentalData(
+            pe_ratio=28, roe=0.22, gross_margin=0.55, operating_margin=0.30,
+            debt_to_equity=0.5, net_margin=0.20, altman_z_score=3.5,
+            piotroski_score=7, ev_to_ebitda=20, free_cashflow_yield=0.04,
+            peg_ratio=1.5, roic=0.18, revenue_growth=0.10,
+        )
+        analyst = AnalystData(
+            consensus="Buy", target_price=220, num_analysts=25,
+            strong_buy_count=10, buy_count=10, hold_count=5,
+        )
+        tech = TechnicalIndicators(
+            rsi_14=55, sma_cross="golden", momentum_30d=5,
+            price_vs_sma50=3, momentum_90d=8, momentum_180d=15,
+        )
+        yf = YFinanceData(
+            insider_buy_count=3, insider_sell_count=4,
+            esg_risk_score=15, earnings_growth_yoy=12,
+            earnings_beat_rate=75,
+        )
+        fg = FearGreedData(value=50, label="Neutral")
+
+        result = calculate_score(
+            ticker="GOOD", name="Good Tech Corp",
+            fundamentals=fd, analyst=analyst,
+            current_price=190, yfinance_data=yf,
+            fear_greed=fg, technical=tech, sector="Technology",
+        )
+        assert result.rating == Rating.BUY, (
+            f"Expected BUY but got {result.rating.value} "
+            f"(score={result.total_score}, threshold={BUY_THRESHOLD})"
+        )
+        assert result.total_score >= BUY_THRESHOLD

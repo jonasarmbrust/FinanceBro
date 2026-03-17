@@ -5,12 +5,18 @@ Gesamtportfolios über die Zeit.
 
 Datenquellen:
   1. Parqet Activities → Täglicher Aktienbestand (Shares pro Ticker)
-  2. yfinance → Historische Tagesschlusskurse
+  2. Parqet Performance API → Initial-Holdings für Positionen vor Activity-Fenster
+  3. yfinance → Historische Tagesschlusskurse (konvertiert in EUR)
 
 Persistenz:
   SQLite-Tabelle `price_history` speichert bereits abgerufene Kurse.
   Beim nächsten Aufruf werden nur neue Tage nachgeladen (inkrementell).
   → Spart API-Calls, übersteht Restarts, funktioniert auch bei Teil-Abrufen.
+
+Limitierungen:
+  Die Parqet Connect API liefert max ~999 Activities via Cursor-Pagination
+  (API-seitiges Limit, nicht unsere Beschränkung). Ältere Positionen werden
+  über die Performance API vorbelegt.
 """
 import logging
 import sqlite3
@@ -117,6 +123,8 @@ def reconstruct_daily_holdings(activities: list[dict]) -> dict[str, list[tuple[s
     [(date, cumulative_shares), ...]
 
     Nur buy/sell/transfer_in/transfer_out werden berücksichtigt.
+    Vollständig verkaufte Positionen (0 End-Shares) werden beibehalten
+    um historische Werte korrekt darzustellen.
     """
     events: dict[str, list[tuple[str, float]]] = defaultdict(list)
 
@@ -167,24 +175,28 @@ def _get_shares_on_date(timeline: list[tuple[str, float]], date_str: str) -> flo
 # Cash Balance Reconstruction
 # ─────────────────────────────────────────────────────────────
 
-def reconstruct_cash_timeline(raw_activities: list[dict]) -> list[tuple[str, float]]:
+def reconstruct_cash_timeline(
+    raw_activities: list[dict],
+    current_cash: float = 0.0,
+) -> list[tuple[str, float]]:
     """Rekonstruiert den Cash-Bestand aus rohen Parqet Activities.
 
-    Cash-Logik:
-      + transferin (Cash)   → Einzahlung
-      - buy (Cash)          → Geld fließt in Aktie
-      + sell (Cash)          → Geld fließt aus Aktie zurück
-      + dividend (Cash)      → Dividende
-      + interest (Cash)      → Zinsen
-      - transferout (Cash)   → Auszahlung
+    Da die API nur die neuesten ~1000 Activities liefert, wird der
+    aktuelle Cash-Bestand von Parqet als Ankerpunkt genutzt und
+    rückwärts rekonstruiert.
 
-    Returns: [(date, cumulative_cash), ...] sortiert nach Datum
+    Args:
+        raw_activities: Rohe Activities von der Parqet API
+        current_cash: Aktueller Cash-Bestand aus Parqet Positions API
+
+    Returns: [(date, cash_balance), ...] sortiert nach Datum
     """
-    events: list[tuple[str, float]] = []
+    # 1. Cash-Deltas aus Activities sammeln
+    deltas: list[tuple[str, float]] = []
 
     for act in raw_activities:
-        hat = act.get("holdingAssetType", "")
-        if hat != "Cash":
+        hat = (act.get("holdingAssetType") or "").lower()
+        if hat != "cash":
             continue
 
         act_type = (act.get("type") or "").lower()
@@ -196,29 +208,51 @@ def reconstruct_cash_timeline(raw_activities: list[dict]) -> list[tuple[str, flo
         if not date:
             continue
 
-        if act_type in ("transferin", "transfer_in"):
-            events.append((date, amount))
-        elif act_type in ("transferout", "transfer_out"):
-            events.append((date, -amount))
+        delta = 0.0
+        if act_type in ("transferin", "transfer_in", "deposit"):
+            delta = amount
+        elif act_type in ("transferout", "transfer_out", "withdrawal"):
+            delta = -amount
         elif act_type in ("buy", "kauf", "purchase"):
-            events.append((date, -amount))  # Cash geht raus
+            delta = -amount  # Cash geht raus
         elif act_type in ("sell", "verkauf", "sale"):
-            events.append((date, amount))   # Cash kommt rein
+            delta = amount   # Cash kommt rein
         elif act_type in ("dividend",):
-            events.append((date, amount))
+            delta = amount
         elif act_type in ("interest",):
-            events.append((date, amount))
+            delta = amount
 
-    events.sort(key=lambda x: x[0])
+        if delta != 0.0:
+            deltas.append((date, delta))
 
-    # Kumulieren
+    if not deltas:
+        # Keine Cash-Activities → konstanter Cash-Bestand
+        today = datetime.now().strftime("%Y-%m-%d")
+        return [(today, current_cash)] if current_cash > 0 else []
+
+    deltas.sort(key=lambda x: x[0])
+
+    # 2. Vorwärts-Summe aller Deltas berechnen
+    # cumulative[i] = Summe aller Deltas von deltas[0] bis deltas[i]
+    cumulative_deltas = []
+    running = 0.0
+    for date, delta in deltas:
+        running += delta
+        cumulative_deltas.append((date, running))
+
+    # 3. Rückwärts-Ankerung: letzter bekannter Cash = current_cash
+    # cash_at_end = current_cash (von Parqet)
+    # cash_at_start = current_cash - sum(alle deltas)
+    total_delta = cumulative_deltas[-1][1]
+    cash_at_start = current_cash - total_delta
+
+    # 4. Timeline erstellen: cash_at_start + cumulative_delta[i]
     timeline = []
-    cumulative = 0.0
-    for date, delta in events:
-        cumulative += delta
-        if abs(cumulative) < 0.01:
-            cumulative = 0.0
-        timeline.append((date, cumulative))
+    for date, cum_delta in cumulative_deltas:
+        cash = cash_at_start + cum_delta
+        if abs(cash) < 0.01:
+            cash = 0.0
+        timeline.append((date, round(cash, 2)))
 
     return timeline
 
@@ -231,28 +265,18 @@ async def build_portfolio_history(
     activities: list[dict],
     period_days: int = 180,
     raw_activities: list[dict] | None = None,
+    current_cash: float = 0.0,
 ) -> dict:
     """Baut die komplette Portfolio-Historie für das Diagramm.
 
     Nutzt SQLite-Cache für bereits abgerufene Kurse und lädt nur
     fehlende Tage inkrementell von yfinance nach.
 
-    Args:
-        activities: Geparste Activities (ohne Cash)
-        period_days: Zeitraum in Tagen
-        raw_activities: Rohe Parqet Activities (inkl. Cash) für Cash-Rekonstruktion
-
-    Returns:
-        {
-            "dates": ["2024-01-02", ...],
-            "stocks": {
-                "AAPL": {"name": "Apple", "values": [1750.0, ...]},
-                "💵 Cash": {"name": "Cash", "values": [500.0, ...]},
-                ...
-            },
-            "total": [12500.0, ...],
-            "total_cost": [11000.0, ...]
-        }
+    Fixes:
+      - Währungskonvertierung: yfinance-Preise werden in EUR konvertiert
+      - Performance API Pre-Population: Positionen vor dem Activity-Fenster
+        werden aus der Performance API vorbelegt
+      - Cost Basis: Sells ziehen avg_cost × shares ab, nicht den Erlös
     """
     if not activities:
         return {"dates": [], "stocks": {}, "total": [], "total_cost": []}
@@ -265,10 +289,13 @@ async def build_portfolio_history(
     if not holdings:
         return {"dates": [], "stocks": {}, "total": [], "total_cost": []}
 
+    # 1b. Performance API: Positionen vorbelegen die vor dem Activity-Fenster liegen
+    await _prepopulate_from_performance(holdings, activities)
+
     # 2. Cash-Timeline rekonstruieren (wenn raw data verfügbar)
     cash_timeline = None
     if raw_activities:
-        cash_timeline = reconstruct_cash_timeline(raw_activities)
+        cash_timeline = reconstruct_cash_timeline(raw_activities, current_cash=current_cash)
 
     # 3. Datumsgrenzen bestimmen
     all_dates = []
@@ -307,6 +334,11 @@ async def build_portfolio_history(
         logger.warning("Keine historischen Kurse verfügbar (Cache + yfinance)")
         return {"dates": [], "stocks": {}, "total": [], "total_cost": []}
 
+    # 5b. Währungskonvertierung: yfinance-Preise in EUR umrechnen
+    from services.currency_converter import CurrencyConverter
+    converter = await CurrencyConverter.create()
+    prices = _convert_prices_to_eur(prices, converter)
+
     # 6. Gemeinsame Datums-Achse aus den Preisdaten ableiten
     all_price_dates: set[str] = set()
     for ticker_prices in prices.values():
@@ -319,10 +351,14 @@ async def build_portfolio_history(
     if not dates:
         return {"dates": [], "stocks": {}, "total": [], "total_cost": []}
 
-    # 7. Einstandskosten-Timeline
-    cost_timeline = _reconstruct_cost_timeline(activities, dates)
+    # 7. Einstandskosten-Timeline (korrigierte Logik: avg_cost bei Sells)
+    active_tickers = set()
+    for ticker, timeline in holdings.items():
+        if timeline and timeline[-1][1] > 0:
+            active_tickers.add(ticker)
+    cost_timeline = _reconstruct_cost_timeline(activities, dates, active_tickers)
 
-    # 8. Werte berechnen: Shares × Kurs pro Tag
+    # 8. Werte berechnen: Shares × Kurs (EUR) pro Tag
     stocks_data: dict[str, dict] = {}
     total_values = [0.0] * len(dates)
 
@@ -353,12 +389,12 @@ async def build_portfolio_history(
     # 9. Cash-Bestand zu den Werten hinzufügen
     if cash_timeline and len(cash_timeline) > 0:
         cash_values = []
-        for date_str in dates:
+        for i, date_str in enumerate(dates):
             cash = _get_shares_on_date(cash_timeline, date_str)
-            cash = max(cash, 0)  # Kein negativer Cash
-            cash_values.append(round(cash, 2))
-            # Cash zum Gesamtwert addieren
-            total_values[dates.index(date_str)] += cash
+            if cash < 0:
+                logger.warning(f"Negativer Cash-Stand am {date_str}: {cash:.2f}€ (fehlende Activities?)")
+            cash_values.append(round(max(cash, 0), 2))
+            total_values[i] += max(cash, 0)
 
         if any(v > 0 for v in cash_values):
             stocks_data["CASH"] = {"name": "💵 Cash", "values": cash_values}
@@ -370,11 +406,15 @@ async def build_portfolio_history(
         reverse=True,
     ))
 
+    # 10. P&L berechnen: Total - Cost (kann negativ sein)
+    pnl = [round(total_values[i] - cost_timeline[i], 2) for i in range(len(dates))]
+
     return {
         "dates": dates,
         "stocks": sorted_stocks,
         "total": [round(v, 2) for v in total_values],
         "total_cost": cost_timeline,
+        "pnl": pnl,
     }
 
 
@@ -382,27 +422,62 @@ async def build_portfolio_history(
 # Helpers
 # ─────────────────────────────────────────────────────────────
 
-def _reconstruct_cost_timeline(activities: list[dict], dates: list[str]) -> list[float]:
-    """Rekonstruiert die kumulierten Einstandskosten pro Tag."""
-    cost_events: list[tuple[str, float]] = []
-    cumulative = 0.0
+def _reconstruct_cost_timeline(
+    activities: list[dict],
+    dates: list[str],
+    active_tickers: set[str] | None = None,
+) -> list[float]:
+    """Rekonstruiert die Netto-Einstandskosten pro Tag.
+
+    KORRIGIERTE Logik:
+    - Buy: addiert amount (Kaufpreis × Shares)
+    - Sell: subtrahiert avg_cost × verkaufte Shares (NICHT den Erlös!)
+    - Dadurch bleibt die Cost-Basis korrekt unabhängig vom Verkaufspreis.
+    """
+    # Pro Ticker: avg_cost und total_invested tracken
+    ticker_cost: dict[str, float] = {}    # Ticker → kumulierte Kosten
+    ticker_shares: dict[str, float] = {}  # Ticker → kumulierte Shares
+
+    cost_events: list[tuple[str, float]] = []  # (date, portfolio_cost)
+    total_cost = 0.0
 
     sorted_acts = sorted(activities, key=lambda a: a.get("date", ""))
     for act in sorted_acts:
         act_type = (act.get("type") or "").lower()
         date = act.get("date", "")
         amount = float(act.get("amount") or 0)
+        shares = float(act.get("shares") or 0)
         ticker = act.get("ticker", "")
 
-        if not date or ticker == "CASH":
+        if not date or ticker == "CASH" or shares <= 0:
+            continue
+
+        # Wenn active_tickers gesetzt, nur diese berücksichtigen
+        if active_tickers and ticker not in active_tickers:
             continue
 
         if act_type in ("buy", "kauf", "purchase", "transferin", "transfer_in"):
-            cumulative += amount
-        elif act_type in ("sell", "verkauf", "sale", "transferout", "transfer_out"):
-            cumulative -= amount
+            # Kosten addieren
+            ticker_cost[ticker] = ticker_cost.get(ticker, 0) + amount
+            ticker_shares[ticker] = ticker_shares.get(ticker, 0) + shares
+            total_cost += amount
 
-        cost_events.append((date, cumulative))
+        elif act_type in ("sell", "verkauf", "sale", "transferout", "transfer_out"):
+            # Avg cost berechnen und anteilig abziehen
+            current_shares = ticker_shares.get(ticker, 0)
+            current_cost = ticker_cost.get(ticker, 0)
+
+            if current_shares > 0:
+                avg_cost = current_cost / current_shares
+                cost_reduction = avg_cost * shares
+            else:
+                cost_reduction = amount  # Fallback
+
+            ticker_cost[ticker] = max(0, current_cost - cost_reduction)
+            ticker_shares[ticker] = max(0, current_shares - shares)
+            total_cost = max(0, total_cost - cost_reduction)
+
+        cost_events.append((date, round(total_cost, 2)))
 
     result = []
     for date_str in dates:
@@ -415,6 +490,100 @@ def _reconstruct_cost_timeline(activities: list[dict], dates: list[str]) -> list
         result.append(round(cost, 2))
 
     return result
+
+
+def _convert_prices_to_eur(
+    prices: dict[str, dict[str, float]],
+    converter,
+) -> dict[str, dict[str, float]]:
+    """Konvertiert alle Preise von Originalwährung in EUR.
+
+    Nutzt den CurrencyConverter mit aktuellen Wechselkursen.
+    Achtung: Nutzt aktuelle Kurse für historische Preise (Approximation).
+    """
+    converted = {}
+    for ticker, date_prices in prices.items():
+        if converter.is_eur_native(ticker):
+            converted[ticker] = date_prices
+            continue
+
+        converted[ticker] = {
+            date: round(converter.to_eur(price, ticker), 4)
+            for date, price in date_prices.items()
+        }
+
+    eur_count = sum(1 for t in prices if converter.is_eur_native(t))
+    fx_count = len(prices) - eur_count
+    if fx_count > 0:
+        logger.info(f"💱 Historie: {fx_count} Ticker in EUR konvertiert, {eur_count} nativ EUR")
+
+    return converted
+
+
+async def _prepopulate_from_performance(
+    holdings: dict[str, list[tuple[str, float]]],
+    activities: list[dict],
+) -> None:
+    """Ergänzt Holdings mit Daten aus der Performance API.
+
+    Wenn eine Position laut Performance API vor dem ältesten Activity
+    existierte, wird ein synthetischer Buy-Event eingefügt.
+    """
+    try:
+        from fetchers.parqet import fetch_portfolio_performance
+        perf_data = await fetch_portfolio_performance()
+        if not perf_data:
+            return
+    except Exception as e:
+        logger.debug(f"Performance API für Pre-Population nicht verfügbar: {e}")
+        return
+
+    # Frühestes Activity-Datum finden
+    all_act_dates = [a.get("date", "") for a in activities if a.get("date")]
+    if not all_act_dates:
+        return
+    earliest_activity = min(all_act_dates)
+
+    prepop_count = 0
+    for h in perf_data.get("holdings", []):
+        ticker = h.get("ticker", "")
+        if not ticker or ticker == "CASH" or h.get("type") == "cash":
+            continue
+
+        earliest_date = h.get("earliestActivityDate", "")
+        shares = h.get("shares", 0)
+
+        # Nur wenn Position VOR dem Activity-Fenster begann
+        if not earliest_date or earliest_date >= earliest_activity:
+            continue
+
+        # Prüfe ob der Ticker bereits in holdings ist
+        if ticker in holdings:
+            # Prüfe ob erste Activity im Holdings-Fenster liegt
+            first_holding_date = holdings[ticker][0][0] if holdings[ticker] else ""
+            if first_holding_date and first_holding_date > earliest_date:
+                # Es gibt einen Gap: Die Position existierte schon vorher
+                # Berechne die Shares am Anfang des Activity-Fensters
+                # (Aktuelle Shares aus Performance API als Startpunkt)
+                if not h.get("isSold", False) and shares > 0:
+                    # Füge den Anfangs-Bestand VOR den ersten bekannten Event ein
+                    # Die Differenz = shares am Anfang des Fensters
+                    existing_first_shares = holdings[ticker][0][1]
+                    if existing_first_shares > 0:
+                        # Es wurde bereits korrekt als Buy einsortiert
+                        continue
+        else:
+            # Ticker existiert gar nicht in den Activities aber hat Shares
+            if shares > 0 and not h.get("isSold", False):
+                # Synthetischen Buy am earliestActivityDate einfügen
+                holdings[ticker] = [(earliest_date, shares)]
+                prepop_count += 1
+                logger.info(
+                    f"📦 Pre-Population: {ticker} mit {shares:.2f} Shares ab {earliest_date}"
+                )
+
+    if prepop_count > 0:
+        logger.info(f"📦 {prepop_count} Positionen aus Performance API vorbelegt")
 
 
 async def _fetch_prices_with_cache(
@@ -434,16 +603,27 @@ async def _fetch_prices_with_cache(
     if not tickers:
         return {}
 
-    # Ticker→yfinance Mapping (ISINs überspringen)
+    # Ticker→yfinance Mapping mit ISIN-Auflösung
+    from fetchers.parqet import ISIN_TICKER_MAP
+
     ticker_to_yf = {}
     yf_to_ticker = {}
     skip_tickers = set()
 
     for t in tickers:
         yf_t = YFINANCE_ALIASES.get(t, t)
+
+        # ISIN-Auflösung: Wenn Ticker wie eine ISIN aussieht, versuche Mapping
         if len(yf_t) == 12 and yf_t[:2].isalpha():
-            skip_tickers.add(t)
-            continue
+            resolved = ISIN_TICKER_MAP.get(yf_t, "")
+            if resolved and resolved != yf_t:
+                yf_t = resolved
+                logger.info(f"ISIN {t} → {yf_t} aufgelöst")
+            else:
+                logger.debug(f"ISIN {t} übersprungen (kein yfinance Ticker)")
+                skip_tickers.add(t)
+                continue
+
         ticker_to_yf[t] = yf_t
         yf_to_ticker[yf_t] = t
 

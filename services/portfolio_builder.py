@@ -15,7 +15,7 @@ from models import PortfolioSummary, StockFullData
 from fetchers.parqet import fetch_portfolio
 from fetchers.yfinance_data import quick_price_update
 from services.currency_converter import CurrencyConverter
-from engine.history import save_snapshot
+from database import save_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -268,45 +268,76 @@ async def update_yfinance_prices() -> dict:
 # ─────────────────────────────────────────────────────────────
 
 async def _fetch_isin_prices(stock_positions, prices, daily_changes):
-    """Holt Preise für ISIN-basierte Ticker via yfinance."""
-    for p in stock_positions:
-        if p.ticker not in prices and len(p.ticker) == 12 and p.ticker[:2].isalpha():
-            try:
-                import yfinance as yf
-                t = yf.Ticker(p.ticker)
-                hist = t.history(period="5d")
-                if hist is not None and not hist.empty:
-                    closes = hist["Close"].dropna()
-                    prices[p.ticker] = round(float(closes.iloc[-1]), 2)
-                    if len(closes) >= 2:
-                        prev = float(closes.iloc[-2])
-                        if prev > 0:
-                            daily_changes[p.ticker] = round(((float(closes.iloc[-1]) - prev) / prev) * 100, 2)
-            except Exception:
-                pass
+    """Holt Preise für ISIN-basierte Ticker via yfinance (non-blocking)."""
+    import asyncio
+
+    async def _fetch_one(p):
+        def _sync_fetch():
+            import yfinance as yf
+            t = yf.Ticker(p.ticker)
+            hist = t.history(period="5d")
+            if hist is not None and not hist.empty:
+                closes = hist["Close"].dropna()
+                price = round(float(closes.iloc[-1]), 2)
+                daily = None
+                if len(closes) >= 2:
+                    prev = float(closes.iloc[-2])
+                    if prev > 0:
+                        daily = round(((float(closes.iloc[-1]) - prev) / prev) * 100, 2)
+                return price, daily
+            return None, None
+
+        try:
+            price, daily = await asyncio.wait_for(
+                asyncio.to_thread(_sync_fetch), timeout=8.0
+            )
+            if price is not None:
+                prices[p.ticker] = price
+            if daily is not None:
+                daily_changes[p.ticker] = daily
+        except Exception:
+            pass
+
+    isins = [p for p in stock_positions
+             if p.ticker not in prices and len(p.ticker) == 12 and p.ticker[:2].isalpha()]
+    if isins:
+        await asyncio.gather(*[_fetch_one(p) for p in isins])
 
 
 async def _fetch_stock_names(positions) -> dict:
-    """Holt Aktiennamen aus yfinance."""
+    """Holt Aktiennamen aus yfinance (parallel, non-blocking)."""
+    import asyncio
     name_map = {}
-    try:
-        import yfinance as yf
-        for pos in positions:
-            if pos.ticker == "CASH" or (pos.name and pos.name != pos.ticker):
-                continue
+
+    # Nur Positionen ohne Namen filtern
+    need_names = [
+        pos for pos in positions
+        if pos.ticker != "CASH"
+        and (not pos.name or pos.name == pos.ticker)
+        and not (len(YFINANCE_ALIASES.get(pos.ticker, pos.ticker)) == 12
+                 and YFINANCE_ALIASES.get(pos.ticker, pos.ticker)[:2].isalpha())
+    ]
+    if not need_names:
+        return name_map
+
+    async def _fetch_one(pos):
+        def _sync_fetch():
+            import yfinance as yf
             yf_ticker = YFINANCE_ALIASES.get(pos.ticker, pos.ticker)
-            if len(yf_ticker) == 12 and yf_ticker[:2].isalpha():
-                continue
-            try:
-                t = yf.Ticker(yf_ticker)
-                info = t.info or {}
-                sn = info.get("shortName") or info.get("longName")
-                if sn:
-                    name_map[pos.ticker] = sn
-            except Exception:
-                pass
-    except Exception:
-        pass
+            t = yf.Ticker(yf_ticker)
+            info = t.info or {}
+            return info.get("shortName") or info.get("longName")
+
+        try:
+            name = await asyncio.wait_for(
+                asyncio.to_thread(_sync_fetch), timeout=5.0
+            )
+            if name:
+                name_map[pos.ticker] = name
+        except Exception:
+            pass
+
+    await asyncio.gather(*[_fetch_one(pos) for pos in need_names])
     return name_map
 
 

@@ -2675,4 +2675,178 @@ body.light-mode .tab.active {
 .historie-summary-value.negative {
     color: var(--red);
 }
+
+/* ==================== Performance KPIs ==================== */
+.performance-kpis {
+    margin-bottom: 1rem;
+}
+
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 0.75rem;
+}
+
+.kpi-card {
+    background: rgba(30, 41, 59, 0.7);
+    border: 1px solid rgba(148, 163, 184, 0.1);
+    border-radius: var(--radius-md);
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    transition: border-color 0.2s;
+}
+
+.kpi-card:hover {
+    border-color: rgba(148, 163, 184, 0.25);
+}
+
+.kpi-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.kpi-value {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.kpi-sub {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.kpi-valuation {
+    border-left: 3px solid var(--blue, #3b82f6);
+}
+
+.kpi-unrealized {
+    border-left: 3px solid var(--green, #22c55e);
+}
+
+.kpi-realized {
+    border-left: 3px solid var(--yellow, #eab308);
+}
+
+.kpi-dividends {
+    border-left: 3px solid var(--cyan, #06b6d4);
+}
+
+.kpi-taxes {
+    border-left: 3px solid var(--red, #ef4444);
+}
+
+.kpi-fees {
+    border-left: 3px solid var(--text-secondary, #94a3b8);
+}
+
+.kpi-interval {
+    margin-top: 0.5rem;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+@media (max-width: 1024px) {
+    .kpi-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 600px) {
+    .kpi-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* ==================== Holdings Table ==================== */
+.holdings-section {
+    margin-top: 1rem;
+}
+
+.holdings-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.holdings-table thead th {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+    text-align: left;
+}
+
+.holdings-table tbody tr {
+    border-bottom: 1px solid rgba(148, 163, 184, 0.07);
+    transition: background 0.15s;
+}
+
+.holdings-table tbody tr:hover {
+    background: rgba(148, 163, 184, 0.05);
+}
+
+.holdings-table td {
+    padding: 0.6rem 0.75rem;
+    color: var(--text-primary);
+    vertical-align: middle;
+}
+
+.holdings-table-wrap {
+    overflow-x: auto;
+}
+
+.holdings-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.15s;
+    white-space: nowrap;
+}
+
+.holdings-table th.sortable:hover {
+    color: #e2e8f0;
+}
+
+.holdings-table th.sorted {
+    color: #3b82f6;
+}
+
+/* ==================== Ticker Filter Chips ==================== */
+.ticker-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    padding: 0.75rem 0;
+}
+
+.ticker-chip {
+    padding: 0.25rem 0.6rem;
+    border-radius: 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: rgba(30, 41, 59, 0.5);
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: 'Inter', sans-serif;
+}
+
+.ticker-chip:hover {
+    border-color: var(--chip-color, rgba(148, 163, 184, 0.4));
+    background: rgba(30, 41, 59, 0.8);
+}
+
+.ticker-chip.active {
+    border-color: var(--chip-color, #3b82f6);
+    background: color-mix(in srgb, var(--chip-color, #3b82f6) 15%, transparent);
+    color: var(--text-primary);
+}
 

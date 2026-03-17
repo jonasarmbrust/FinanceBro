@@ -97,6 +97,47 @@ async def send_report(title: str, sections: list[tuple[str, str]]) -> bool:
     return await send_message(full_text)
 
 
+async def download_telegram_file(file_id: str) -> bytes:
+    """Lädt eine Datei von Telegram herunter (z.B. Sprachnachricht).
+
+    Args:
+        file_id: Telegram file_id (aus voice/document/photo Objekten)
+
+    Returns:
+        Datei-Inhalt als Bytes
+
+    Raises:
+        RuntimeError: Wenn Download fehlschlägt
+    """
+    token = settings.TELEGRAM_BOT_TOKEN
+    if not token:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN nicht konfiguriert")
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        # Schritt 1: File-Path von Telegram holen
+        get_file_url = f"https://api.telegram.org/bot{token}/getFile"
+        resp = await client.get(get_file_url, params={"file_id": file_id})
+
+        if resp.status_code != 200:
+            raise RuntimeError(f"getFile fehlgeschlagen: {resp.status_code}")
+
+        data = resp.json()
+        if not data.get("ok"):
+            raise RuntimeError(f"getFile Fehler: {data}")
+
+        file_path = data["result"]["file_path"]
+
+        # Schritt 2: Datei herunterladen
+        download_url = f"https://api.telegram.org/file/bot{token}/{file_path}"
+        file_resp = await client.get(download_url)
+
+        if file_resp.status_code != 200:
+            raise RuntimeError(f"File-Download fehlgeschlagen: {file_resp.status_code}")
+
+        logger.info(f"📥 Telegram-Datei geladen: {file_path} ({len(file_resp.content)} Bytes)")
+        return file_resp.content
+
+
 def _split_message(text: str) -> list[str]:
     """Splittet lange Nachrichten an Zeilenumbrüchen.
 

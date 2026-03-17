@@ -182,7 +182,7 @@ async def get_benchmark(symbol: str = "SPY", period: str = "6month"):
             })
 
         # Portfolio-Performance aus History
-        from engine.history import load_history
+        from database import load_snapshots as load_history
         portfolio_history = load_history(days=days)
 
         portfolio_data_series = []
@@ -555,10 +555,21 @@ async def get_portfolio_history_detail(period: str = "6month"):
     except Exception as e:
         logger.debug(f"Raw Activities Cache nicht verfügbar: {e}")
 
+    # Aktuellen Cash-Bestand aus Portfolio-Daten holen (Parqet-Ankerwert)
+    current_cash = 0.0
+    summary = portfolio_data.get("summary")
+    if summary and summary.stocks:
+        for s in summary.stocks:
+            if s.position.ticker == "CASH":
+                current_cash = s.position.current_value or s.position.current_price or 0.0
+                break
+
     try:
         from engine.portfolio_history import build_portfolio_history
         result = await build_portfolio_history(
-            activities, period_days=days, raw_activities=raw_activities
+            activities, period_days=days,
+            raw_activities=raw_activities,
+            current_cash=current_cash,
         )
         if result and result.get("dates"):
             _set_cached(cache_key, result)
@@ -569,3 +580,22 @@ async def get_portfolio_history_detail(period: str = "6month"):
         traceback.print_exc()
         return {"error": str(e)}
 
+
+@router.get("/api/performance")
+async def get_portfolio_performance():
+    """Liefert die komplette Portfolio-Performance über die Parqet Connect API.
+
+    Enthält: KPIs, alle Holdings (aktiv + verkauft), Dividenden, Steuern, Gebühren.
+    """
+    try:
+        from fetchers.parqet import fetch_portfolio_performance
+        result = await fetch_portfolio_performance()
+        if not result:
+            return JSONResponse(
+                {"error": "Performance-Daten nicht verfügbar"},
+                status_code=503,
+            )
+        return result
+    except Exception as e:
+        logger.error(f"Performance Endpoint Fehler: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)

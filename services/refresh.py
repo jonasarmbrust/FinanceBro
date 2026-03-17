@@ -31,7 +31,7 @@ from fetchers.currency import fetch_eur_usd_rate, fetch_eur_dkk_rate
 from services.currency_converter import CurrencyConverter
 from engine.scorer import calculate_score
 from engine.rebalancer import calculate_rebalancing
-from engine.history import save_snapshot
+from database import save_snapshot
 from engine.analysis import build_analysis_report
 from services.portfolio_builder import calc_portfolio_totals
 
