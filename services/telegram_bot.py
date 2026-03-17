@@ -410,7 +410,7 @@ async def _cmd_news(chat_id: str):
 
             client_fb = get_client()
             response = await client_fb.aio.models.generate_content(
-                model="gemini-2.0-flash",
+                model="gemini-2.5-flash",
                 contents=prompt,
             )
             result = response.text.strip() if response.text else "Keine Analyse verfügbar."
@@ -855,7 +855,7 @@ async def _cmd_wissen_quiz(chat_id: str):
         )
 
         response = await client.aio.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=prompt,
         )
 
@@ -964,7 +964,7 @@ async def _process_voice_with_gemini(audio_bytes: bytes, caption: str = "") -> s
     ))
 
     transcript_response = await client.aio.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents=[Content(role="user", parts=[audio_part, instruction])],
     )
 
@@ -998,7 +998,7 @@ async def _process_voice_with_gemini(audio_bytes: bytes, caption: str = "") -> s
     config = get_grounded_config()
 
     response = await client.aio.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents=f"{system_prompt}User-Frage (Sprachnachricht): {question}",
         config=config,
     )
