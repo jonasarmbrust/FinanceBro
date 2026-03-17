@@ -919,11 +919,10 @@ async def _handle_voice_memo(chat_id: str, voice: dict, caption: str = ""):
 
 
 async def _process_voice_with_gemini(audio_bytes: bytes, caption: str = "") -> str:
-    """Verarbeitet Audio in 2 Stufen:
+    """Verarbeitet Audio in 2 Stufen (beide Flash für Zuverlässigkeit):
 
-    1. Gemini Flash transkribiert/versteht das Audio
-    2. Das Transkript wird über den gleichen Gemini-Chat-Flow verarbeitet
-       wie _cmd_chat (get_client + get_grounded_config + Portfolio-Kontext)
+    1. Gemini Flash transkribiert das Audio
+    2. Gemini Flash beantwortet die Frage mit Portfolio-Kontext + Search Grounding
 
     Args:
         audio_bytes: OGG-Audio-Datei als Bytes
@@ -937,10 +936,11 @@ async def _process_voice_with_gemini(audio_bytes: bytes, caption: str = "") -> s
 
     client = get_client()
 
-    # ── Schritt 1: Audio transkribieren mit Flash ──
+    # ── Schritt 1: Audio transkribieren ──
+    logger.info(f"Voice Schritt 1: Transkription starten ({len(audio_bytes)} Bytes)")
     audio_part = Part.from_bytes(data=audio_bytes, mime_type="audio/ogg")
     instruction = Part(text=(
-        "Höre diese Sprachnachricht an und gib den Inhalt als Text wieder. "
+        "Hoere diese Sprachnachricht an und gib den Inhalt als Text wieder. "
         "Fasse zusammen was der User sagt/fragt. Antworte NUR mit dem Inhalt "
         "der Nachricht, keine eigene Analyse. Deutsch."
     ))
@@ -952,11 +952,13 @@ async def _process_voice_with_gemini(audio_bytes: bytes, caption: str = "") -> s
 
     transcript = transcript_response.text.strip() if transcript_response.text else ""
     if not transcript:
+        logger.warning("Voice Schritt 1: Transkription leer")
         return "Sprachnachricht konnte nicht verstanden werden."
 
-    logger.info(f"🎙️ Voice transkribiert: {transcript[:100]}...")
+    logger.info(f"Voice Schritt 1 OK: '{transcript[:80]}...'")
 
-    # ── Schritt 2: Transkript als Chat verarbeiten (wie _cmd_chat) ──
+    # ── Schritt 2: Transkript beantworten (Flash + Grounding) ──
+    logger.info("Voice Schritt 2: Antwort generieren")
     portfolio_context = _get_portfolio_context()
 
     question = transcript
@@ -966,7 +968,7 @@ async def _process_voice_with_gemini(audio_bytes: bytes, caption: str = "") -> s
     system_prompt = (
         "Du bist FinanzBro, ein intelligenter Portfolio-Assistent. "
         "Der User hat per Sprachnachricht eine Frage gestellt. "
-        "Antworte kurz und prägnant auf Deutsch (max 800 Zeichen). "
+        "Antworte kurz und praegnant auf Deutsch (max 800 Zeichen). "
         "Nutze Emojis sparsam. Sei direkt und hilfreich.\n\n"
     )
     if portfolio_context:
@@ -978,15 +980,15 @@ async def _process_voice_with_gemini(audio_bytes: bytes, caption: str = "") -> s
     config = get_grounded_config()
 
     response = await client.aio.models.generate_content(
-        model="gemini-2.5-pro",
+        model="gemini-2.0-flash",
         contents=f"{system_prompt}User-Frage (Sprachnachricht): {question}",
         config=config,
     )
 
     answer = response.text.strip() if response.text else "Keine Antwort erhalten."
+    logger.info(f"Voice Schritt 2 OK: {len(answer)} Zeichen")
 
-    # Transkript + Antwort zusammenbauen
-    return f"📝 _{transcript}_\n\n{answer}"
+    return f"Transkript: _{transcript}_\n\n{answer}"
 
 
 # ─────────────────────────────────────────────────────────────
