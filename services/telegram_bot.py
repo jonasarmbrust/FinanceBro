@@ -983,23 +983,43 @@ async def _process_voice_with_gemini(audio_bytes: bytes, caption: str = "") -> s
     if caption:
         question = f"{caption}: {transcript}"
 
+    # Reichhaltiger Kontext fuer bessere Antworten
     system_prompt = (
-        "Du bist FinanzBro, ein intelligenter Portfolio-Assistent. "
-        "Der User hat per Sprachnachricht eine Frage gestellt. "
-        "Antworte kurz und praegnant auf Deutsch (max 800 Zeichen). "
-        "Nutze Emojis sparsam. Sei direkt und hilfreich.\n\n"
+        "Du bist FinanzBro, ein persoenlicher Portfolio-Assistent. "
+        "Der User hat per Sprachnachricht eine Frage gestellt.\n\n"
+        "WICHTIG:\n"
+        "- Beziehe dich KONKRET auf die Positionen des Users wenn relevant\n"
+        "- Nenne Ticker und aktuelle P&L wenn es zur Frage passt\n"
+        "- Nutze Google Search fuer aktuelle Marktdaten und News\n"
+        "- Antworte auf Deutsch, max 2000 Zeichen\n"
+        "- Sei direkt, konkret und hilfreich\n\n"
     )
     if portfolio_context:
+        # Portfolio-Summary hinzufuegen
+        try:
+            from state import portfolio_data
+            summary = portfolio_data.get("summary")
+            if summary:
+                system_prompt += (
+                    f"PORTFOLIO-UEBERSICHT:\n"
+                    f"Gesamtwert: {summary.total_value:,.0f} EUR\n"
+                    f"Gesamt P&L: {summary.total_pnl:+,.0f} EUR ({summary.total_pnl_percent:+.1f}%)\n"
+                    f"Positionen: {summary.num_positions}\n\n"
+                )
+        except Exception:
+            pass
         system_prompt += (
-            "Hier ist der aktuelle Portfolio-Status:\n"
+            "EINZELPOSITIONEN:\n"
             f"{portfolio_context}\n\n"
         )
+    else:
+        system_prompt += "HINWEIS: Keine Portfolio-Daten geladen.\n\n"
 
     config = get_grounded_config()
 
     response = await client.aio.models.generate_content(
         model="gemini-2.5-flash",
-        contents=f"{system_prompt}User-Frage (Sprachnachricht): {question}",
+        contents=f"{system_prompt}USER-FRAGE: {question}",
         config=config,
     )
 
