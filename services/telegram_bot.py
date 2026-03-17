@@ -919,11 +919,11 @@ async def _handle_voice_memo(chat_id: str, voice: dict, caption: str = ""):
 
 
 async def _process_voice_with_gemini(audio_bytes: bytes, caption: str = "") -> str:
-    """Sendet Audio nativ an Gemini mit Portfolio-Kontext + Function Calling.
+    """Verarbeitet Audio in 2 Stufen:
 
-    Gemini versteht Audio direkt — kein Transkriptions-Zwischenschritt nötig.
-    Die KI kann per Function Calling auf Portfolio-Daten, Scores und
-    Sektor-Impact zugreifen.
+    1. Gemini Flash transkribiert/versteht das Audio
+    2. Das Transkript wird als Text an den bestehenden Chat-Handler weitergeleitet
+       (der bereits Function Calling + Search Grounding hat)
 
     Args:
         audio_bytes: OGG-Audio-Datei als Bytes
@@ -932,127 +932,48 @@ async def _process_voice_with_gemini(audio_bytes: bytes, caption: str = "") -> s
     Returns:
         KI-Antwort als Text
     """
-    import json
-    from services.vertex_ai import get_client, get_cached_content
-    from google.genai.types import (
-        Tool, GoogleSearch, FunctionDeclaration, Part, Content,
-    )
-    from state import portfolio_data
+    from services.vertex_ai import get_client
+    from google.genai.types import Part, Content
 
     client = get_client()
-    summary = portfolio_data.get("summary")
 
-    # Portfolio-Kontext
-    portfolio_context = _get_portfolio_context()
+    # Schritt 1: Audio verstehen mit Flash (schnell + günstig)
+    audio_part = Part.from_bytes(data=audio_bytes, mime_type="audio/ogg")
+    instruction = Part(text=(
+        "Höre diese Sprachnachricht an und gib den Inhalt als Text wieder. "
+        "Fasse zusammen was der User sagt/fragt. Antworte NUR mit dem Inhalt "
+        "der Nachricht, keine eigene Analyse. Deutsch."
+    ))
 
-    system_prompt = (
-        "Du bist FinanzBro, ein intelligenter Portfolio-Berater. "
-        "Der User hat dir eine Sprachnachricht gesendet. "
-        "Höre die Nachricht an, verstehe den Intent und antworte auf Deutsch.\n\n"
-        "Du hast Zugriff auf Tools um Portfolio-Daten und Aktien-Scores abzurufen. "
-        "Nutze sie wenn der User nach spezifischen Aktien oder Portfolio-Daten fragt.\n\n"
-    )
-    if portfolio_context:
-        system_prompt += f"PORTFOLIO-KONTEXT:\n{portfolio_context}\n\n"
-    system_prompt += (
-        "REGELN:\n"
-        "- Antworte auf Deutsch, klar und direkt\n"
-        "- Nutze Google Search für aktuelle Marktdaten wenn nötig\n"
-        "- Beziehe dich auf das Portfolio wenn relevant\n"
-        "- Sei ehrlich über Unsicherheiten und Risiken\n"
-        "- Max 1000 Zeichen Antwort\n"
+    transcript_response = await client.aio.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=[Content(role="user", parts=[audio_part, instruction])],
     )
 
-    # Tool-Definitionen (wiederverwendet aus trade_advisor)
-    from services.trade_advisor import _build_tool_declarations, _execute_tool_call
-    tool_declarations = [
-        FunctionDeclaration(**td) for td in _build_tool_declarations()
-    ]
+    transcript = transcript_response.text.strip() if transcript_response.text else ""
+    if not transcript:
+        return "❌ Sprachnachricht konnte nicht verstanden werden."
 
-    config = {
-        "tools": [
-            Tool(google_search=GoogleSearch()),
-            Tool(function_declarations=tool_declarations),
-        ],
-        "system_instruction": system_prompt,
-    }
+    logger.info(f"🎙️ Voice transkribiert: {transcript[:100]}...")
 
-    cached = get_cached_content()
-    if cached:
-        config["cached_content"] = cached
-
-    # Content: Audio + optionale Caption
-    parts = [
-        Part.from_bytes(data=audio_bytes, mime_type="audio/ogg"),
-    ]
+    # Schritt 2: Transkript + Caption als Text-Query verarbeiten
+    # Nutzt den bestehenden Chat-Handler mit Function Calling + Search Grounding
+    query = transcript
     if caption:
-        parts.append(Part(text=f"Zusatzinfo vom User: {caption}"))
-    parts.append(Part(text=(
-        "Bitte höre die Sprachnachricht an und beantworte die Frage/Anfrage "
-        "des Users. Nutze die verfügbaren Tools wenn du Daten brauchst."
-    )))
+        query = f"{caption}: {transcript}"
 
-    # Gemini-Call
-    response = client.models.generate_content(
-        model="gemini-2.5-pro",
-        contents=[Content(role="user", parts=parts)],
-        config=config,
-    )
+    # Prefix damit die KI weiß, dass es eine Sprachnachricht war
+    voice_query = f"[Sprachnachricht] {query}"
 
-    # Function Calling Loop (max 3 Runden)
-    all_contents = [
-        Content(role="user", parts=parts),
-        response.candidates[0].content,
-    ]
+    from services.trade_advisor import chat_with_advisor
+    from state import portfolio_data
 
-    for round_num in range(3):
-        function_calls = [
-            p for p in response.candidates[0].content.parts
-            if p.function_call
-        ]
-        if not function_calls:
-            break
-
-        logger.info(f"🎙️ Voice Tool-Runde {round_num + 1}: {len(function_calls)} Calls")
-
-        # Tool-Calls ausführen
-        tool_results = []
-        for fc_part in function_calls:
-            fc = fc_part.function_call
-            tool_name = fc.name
-            tool_args = dict(fc.args) if fc.args else {}
-
-            # Für get_stock_score: Live-Score berechnen
-            if tool_name == "get_stock_score" and summary:
-                from services.trade_advisor import _get_or_calculate_score
-                ticker = tool_args.get("ticker", "")
-                score_info = await _get_or_calculate_score(ticker, summary)
-                result_str = json.dumps(score_info, default=str)
-            else:
-                # Portfolio-Kontext für andere Tools
-                portfolio_ctx = {}
-                if summary:
-                    from services.trade_advisor import _build_portfolio_context
-                    portfolio_ctx = _build_portfolio_context(summary, "", "buy", None)
-                result_str = _execute_tool_call(
-                    tool_name, tool_args, {}, portfolio_ctx,
-                )
-
-            tool_results.append(Part.from_function_response(
-                name=tool_name,
-                response={"result": result_str},
-            ))
-
-        all_contents.append(Content(role="user", parts=tool_results))
-
-        response = client.models.generate_content(
-            model="gemini-2.5-pro",
-            contents=all_contents,
-            config=config,
-        )
-        all_contents.append(response.candidates[0].content)
-
-    return response.text.strip() if response.text else "Leider konnte ich die Sprachnachricht nicht verarbeiten."
+    summary = portfolio_data.get("summary")
+    if summary:
+        result = await chat_with_advisor(voice_query, summary)
+        return f"📝 _{transcript}_\n\n{result}"
+    else:
+        return f"📝 _{transcript}_\n\n⚠️ Keine Portfolio-Daten geladen. Bitte erst /refresh ausführen."
 
 
 # ─────────────────────────────────────────────────────────────
