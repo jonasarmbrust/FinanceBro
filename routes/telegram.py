@@ -6,14 +6,15 @@ und leitet sie an den Command Handler weiter.
 Webhook ist über ein Secret-Token in der URL geschützt:
   /api/telegram/webhook/<secret>
 
-WICHTIG: handle_update wird direkt awaited (nicht als create_task),
-damit Cloud Run die Instance am Leben hält bis die Verarbeitung
-abgeschlossen ist (z.B. Voice-Memo → Gemini dauert ~15-30s).
+Nutzt Starlette BackgroundTasks: Telegram bekommt sofort 200 OK,
+aber handle_update läuft im selben Request-Lifecycle weiter.
+So bleibt Cloud Run am Leben bis die Verarbeitung fertig ist.
 """
 import secrets
 import logging
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Request, BackgroundTasks
+from starlette.responses import Response
 
 from config import settings
 
@@ -22,13 +23,26 @@ router = APIRouter(tags=["telegram"])
 logger = logging.getLogger(__name__)
 
 
+async def _process_update(update: dict):
+    """Verarbeitet ein Telegram-Update (Background Task).
+
+    Läuft nach dem HTTP-200-Response, aber innerhalb des
+    gleichen Request-Lifecycles — Cloud Run hält die Instance.
+    """
+    try:
+        from services.telegram_bot import handle_update
+        await handle_update(update)
+    except Exception as e:
+        logger.error(f"Telegram-Update-Verarbeitung fehlgeschlagen: {e}", exc_info=True)
+
+
 @router.post("/api/telegram/webhook/{secret}")
-async def telegram_webhook(secret: str, request: Request):
+async def telegram_webhook(secret: str, request: Request, background_tasks: BackgroundTasks):
     """Empfängt Telegram-Updates via Webhook.
 
-    Das Secret in der URL muss mit TELEGRAM_WEBHOOK_SECRET übereinstimmen.
-    handle_update wird direkt awaited damit Cloud Run die Instance
-    nicht vorzeitig beendet.
+    Gibt sofort 200 zurück (Telegram-Timeout = 60s).
+    Die eigentliche Verarbeitung läuft als BackgroundTask
+    im selben Request-Lifecycle weiter.
     """
     # Secret-Token prüfen
     if not settings.TELEGRAM_WEBHOOK_SECRET or \
@@ -38,14 +52,14 @@ async def telegram_webhook(secret: str, request: Request):
 
     try:
         update = await request.json()
-        logger.debug(f"Telegram-Update empfangen: {update.get('update_id', '?')}")
+        logger.info(f"Telegram-Update empfangen: {update.get('update_id', '?')}")
 
-        from services.telegram_bot import handle_update
-        await handle_update(update)
+        background_tasks.add_task(_process_update, update)
 
         return Response(status_code=200)
 
     except Exception as e:
         logger.error(f"Telegram-Webhook-Fehler: {e}")
         return Response(status_code=200)
+
 
