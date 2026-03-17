@@ -5,6 +5,10 @@ und leitet sie an den Command Handler weiter.
 
 Webhook ist über ein Secret-Token in der URL geschützt:
   /api/telegram/webhook/<secret>
+
+WICHTIG: handle_update wird direkt awaited (nicht als create_task),
+damit Cloud Run die Instance am Leben hält bis die Verarbeitung
+abgeschlossen ist (z.B. Voice-Memo → Gemini dauert ~15-30s).
 """
 import secrets
 import logging
@@ -23,6 +27,8 @@ async def telegram_webhook(secret: str, request: Request):
     """Empfängt Telegram-Updates via Webhook.
 
     Das Secret in der URL muss mit TELEGRAM_WEBHOOK_SECRET übereinstimmen.
+    handle_update wird direkt awaited damit Cloud Run die Instance
+    nicht vorzeitig beendet.
     """
     # Secret-Token prüfen
     if not settings.TELEGRAM_WEBHOOK_SECRET or \
@@ -35,11 +41,11 @@ async def telegram_webhook(secret: str, request: Request):
         logger.debug(f"Telegram-Update empfangen: {update.get('update_id', '?')}")
 
         from services.telegram_bot import handle_update
-        import asyncio
-        asyncio.create_task(handle_update(update))
+        await handle_update(update)
 
         return Response(status_code=200)
 
     except Exception as e:
         logger.error(f"Telegram-Webhook-Fehler: {e}")
         return Response(status_code=200)
+
