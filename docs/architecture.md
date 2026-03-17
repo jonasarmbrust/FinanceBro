@@ -125,18 +125,18 @@ Expliziter Demo-Toggle für externe Präsentationen — unabhängig von API-Keys
 
 | Endpoint | Funktion |
 |----------|----------|
-| `POST /api/demo/activate` | Baut Demo-Portfolio (12 Positionen) aus statischen Daten |
+| `POST /api/demo/activate` | Baut Demo-Portfolio (12 fiktive Positionen) aus statischen Daten |
 | `POST /api/demo/deactivate` | Löscht Demo-Daten, startet echten Refresh |
 | `GET /api/demo/status` | Gibt Demo-Status zurück |
 
 - **Kein API-Call** nötig — alle Daten aus `fetchers/demo_data.py`
 - **Komplettes Portfolio**: Fundamentals, Analysten, Technical, Scores, Rebalancing, Tech Picks
 - **Frontend**: 🎭 Demo-Button im Header, Banner, Badge
-- **History**: Synthetische 6-Monats-Verlaufsdaten
+- **History Privacy**: Endpunkte wie `/api/portfolio/history-detail` und `/api/benchmark` nutzen im Demo-Modus ausschließlich synthetische Verlaufsdaten. Echte Portfolio-Werte (aus SQLite) werden hier strikt verborgen.
 
-### Startup Port-Cleanup
-
-`_kill_port_occupants()` in `main.py` beendet automatisch alte Server-Instanzen auf dem konfigurierten Port vor dem Start. Verhindert Whitescreen durch Zombie-Prozesse.
+### Startup Port-Cleanup & Memory Limits
+- **Port Cleanup**: `_kill_port_occupants()` in `main.py` beendet automatisch alte Server-Instanzen auf dem konfigurierten Port vor dem Start. Verhindert Whitescreen durch Zombie-Prozesse.
+- **Speicherbedarf (RAM)**: Da `yfinance` intensiv `pandas` und `numpy` nutzt, muss der Cloud Run Container mit **mindestens 1024Mi (1 GB) RAM** betrieben werden (`--memory 1024Mi`). Startvorgänge unterhalb von 1GB führen durch Nebenläufigkeit bei der Kursdaten-Abfrage (`batch_size=2`) unweigerlich zu Out-Of-Memory (OOM) Abstürzen ("Truncated response body").
 
 ## AI-Architektur (Vertex AI)
 

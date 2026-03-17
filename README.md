@@ -1,7 +1,7 @@
 # 📊 FinanzBro – Intelligentes Portfolio Dashboard
 
 Echtzeit-Portfolio-Dashboard mit Multi-Faktor-Scoring, Conviction-basiertem Rebalancing, AI Trade Advisor (Function Calling + Chat), Gemini Structured Output und yFinance-basiertem Stock Screener.  
-Läuft lokal und auf **Google Cloud Run**.
+Läuft lokal und auf **Google Cloud Run** (min. 1GB RAM empfohlen).
 
 ## Architektur
 
@@ -70,6 +70,9 @@ Gemini 2.5 Pro hat Zugriff auf 3 Tools und entscheidet selbst, welche Daten ben�
 - `get_stock_score(ticker)` — 10-Faktor-Score berechnen
 - `get_portfolio_overview()` — Portfolio-Kontext abrufen
 - `get_sector_impact(ticker, action, amount)` — Sektor-Impact simulieren
+
+### Asynchrone AI-Integration
+Alle Aufrufe an die Gemini API verwenden strikt das asynchrone SDK (`client.aio.models.generate_content`). Dies verhindert eine Blockade des FastAPI `asyncio` Event-Loops während langen KI-Bedenkzeiten und garantiert dauerhafte Responsivität des Dashboards.
 
 ### Structured Output
 Alle JSON-AI-Services nutzen `response_schema` — Gemini garantiert valides JSON.

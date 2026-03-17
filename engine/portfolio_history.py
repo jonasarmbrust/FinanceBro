@@ -277,7 +277,35 @@ async def build_portfolio_history(
       - Performance API Pre-Population: Positionen vor dem Activity-Fenster
         werden aus der Performance API vorbelegt
       - Cost Basis: Sells ziehen avg_cost × shares ab, nicht den Erlös
+      - Demo Mode Interception: Wenn im Demo Mode, liefere direkt synthetische Daten
     """
+    from state import portfolio_data
+    summary = portfolio_data.get("summary")
+    if summary and getattr(summary, "is_demo", False):
+        from fetchers.demo_data import get_demo_portfolio_history
+        demo_history = get_demo_portfolio_history(days=period_days)
+        if not demo_history:
+             return {"dates": [], "stocks": {}, "total": [], "total_cost": []}
+             
+        dates = [entry["date"] for entry in demo_history]
+        total_values = [entry["total_value"] for entry in demo_history]
+        pnl = [entry["pnl"] for entry in demo_history]
+        total_cost = [entry.get("cost_basis", 100000) for entry in demo_history]
+        
+        # Vereinfachte Demo-Struktur (nur Apple + Microsoft als Platzhalter)
+        demo_stocks = {
+             "AAPL": {"name": "Apple Inc.", "values": [v * 0.6 for v in total_values]},
+             "MSFT": {"name": "Microsoft Corporation", "values": [v * 0.4 for v in total_values]}
+        }
+        
+        return {
+            "dates": dates,
+            "stocks": demo_stocks,
+            "total": total_values,
+            "total_cost": total_cost,
+            "pnl": pnl,
+        }
+
     if not activities:
         return {"dates": [], "stocks": {}, "total": [], "total_cost": []}
 

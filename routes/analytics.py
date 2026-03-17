@@ -181,14 +181,9 @@ async def get_benchmark(symbol: str = "SPY", period: str = "6month"):
                 "return_pct": round(pct, 2),
             })
 
-        # Portfolio-Performance aus History oder Demo-Modus
-        summary = portfolio_data.get("summary")
-        if summary and summary.is_demo:
-            from fetchers.demo_data import get_demo_portfolio_history
-            portfolio_history = get_demo_portfolio_history(days=days)
-        else:
-            from database import load_snapshots as load_history
-            portfolio_history = load_history(days=days)
+        # Portfolio-Performance aus History (Demo Mode wird in der DB via Summary abgefangen)
+        from database import load_snapshots as load_history
+        portfolio_history = load_history(days=days)
 
         portfolio_data_series = []
         if portfolio_history and len(portfolio_history) >= 2:

@@ -80,16 +80,10 @@ async def get_portfolio_history(days: int = 90):
     """Portfolio-Verlauf: Investiertes Kapital + aktueller Wert ueber Zeit.
 
     Datenquellen (in Prioritaet):
-    0. Demo-Modus → synthetische Daten
     1. Parqet Activities -> rekonstruierte Investment-Timeline
     2. Lokale Snapshots aus vorherigen Refreshes
     3. Aktueller Portfoliowert als einzelner Datenpunkt
     """
-    # --- 0. Demo-Modus: Synthetische Verlaufsdaten ---
-    summary = portfolio_data.get("summary")
-    if summary and summary.is_demo:
-        from fetchers.demo_data import get_demo_portfolio_history
-        return get_demo_portfolio_history(days=days)
     # --- 1. Versuche Investment-Timeline aus Parqet Activities ---
     try:
         # Activities aus State lesen (bereits beim Refresh gecacht)
