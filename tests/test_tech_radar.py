@@ -197,8 +197,12 @@ class TestTechRadarAI:
         mock_response = MagicMock()
         mock_response.text = "AAPL: iPhone-Ökosystem bleibt stark\nMSFT: Cloud-Wachstum durch Azure"
 
+        mock_aio_models = AsyncMock()
+        mock_aio_models.generate_content.return_value = mock_response
+        mock_aio = MagicMock()
+        mock_aio.models = mock_aio_models
         mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = mock_response
+        mock_client.aio = mock_aio
 
         with patch("services.tech_radar_ai.settings") as mock_settings, \
              patch("services.vertex_ai.get_client", return_value=mock_client), \

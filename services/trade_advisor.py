@@ -463,7 +463,7 @@ async def _call_gemini_with_tools(
         config["cached_content"] = cached
 
     # Schritt 1: Initiale Anfrage
-    response = client.models.generate_content(
+    response = await client.aio.models.generate_content(
         model="gemini-2.5-pro",
         contents=user_prompt,
         config=config,
@@ -508,7 +508,7 @@ async def _call_gemini_with_tools(
         # Tool-Ergebnisse zurücksenden
         contents.append(Content(role="user", parts=tool_results))
 
-        response = client.models.generate_content(
+        response = await client.aio.models.generate_content(
             model="gemini-2.5-pro",
             contents=contents,
             config=config,

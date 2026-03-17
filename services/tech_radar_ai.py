@@ -97,7 +97,7 @@ async def enrich_with_ai_analysis(
             "Fazit: Premium-Bewertung für Premium-Wachstum gerechtfertigt."
         )
 
-        response = client.models.generate_content(
+        response = await client.aio.models.generate_content(
             model="gemini-2.5-pro",
             contents=prompt,
             config=get_grounded_config(),

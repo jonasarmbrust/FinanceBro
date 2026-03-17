@@ -131,7 +131,7 @@ async def _generate_ai_summary(digest_data: dict) -> str:
 
         prompt += "\nFokus auf Trends, Auffälligkeiten und Ausblick. Keine Grüße oder Einleitung."
 
-        response = client.models.generate_content(
+        response = await client.aio.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
         )

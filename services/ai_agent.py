@@ -348,7 +348,7 @@ async def _run_gemini_research(
         if cached:
             config["cached_content"] = cached
 
-        response = client.models.generate_content(
+        response = await client.aio.models.generate_content(
             model="gemini-2.5-pro",
             contents=prompt,
             config=config,

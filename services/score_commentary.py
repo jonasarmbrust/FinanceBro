@@ -88,7 +88,7 @@ async def generate_score_commentaries(
         commentary_tickers = [s.position.ticker for s in candidates]
         schema = _build_commentary_schema(commentary_tickers)
 
-        response = client.models.generate_content(
+        response = await client.aio.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
             config={
