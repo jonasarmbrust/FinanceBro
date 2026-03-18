@@ -209,11 +209,22 @@ Docker Image (python:3.12-slim, 1 Worker)
   └── Env-Vars (API Keys, OAuth2 Tokens, Auth)
 
 Konfiguration:
-  Memory:        512 Mi
-  CPU:           1
+  Memory:        1 Gi (min. für pandas/yfinance)
+  CPU:           1 + CPU Boost
   Min Instances: 0 (Scale to Zero)
   Max Instances: 1
   Region:        europe-west1
+  CPU Throttling: Aus (--no-cpu-throttling)
+```
+
+### Keep-Alive (Cloud Scheduler)
+```
+Job:      finanzbro-keepalive
+Schedule: */10 8-22 * * 1-5 (alle 10min, Mo-Fr 08-22 CET)
+Target:   GET /health
+Zweck:    Hält den Container wach damit APScheduler
+          (Reports, Intraday-Updates) zuverlässig läuft.
+Kosten:   0 €/Monat (Free Tier: 3 Jobs kostenlos)
 ```
 
 ### Job (tägliche Analyse + Telegram Report)
@@ -235,6 +246,9 @@ Kosten:  0 €/Monat (Free Tier)
 | Job | Zeit | Funktion |
 |-----|------|----------|
 | Full Analyse | 16:15 CET | Refresh + Scoring + AI Report |
+| News-Kurator | Mo-Fr 09, 13, 17, 21 | Proaktive Portfolio-News-Alerts |
 | Intraday Kurse | alle 15min Mo-Fr 8-22h | yFinance Batch |
 | Weekly Digest | Freitag 22:30 | KI-Zusammenfassung |
 | Cloud Run Job | 15:45 CET (Cloud Scheduler) | Full Refresh → Telegram Report |
+
+> **Wichtig:** Der APScheduler läuft in-process im Cloud Run Container. Ohne den `finanzbro-keepalive` Cloud Scheduler Job würde der Container bei Inaktivität abschalten und alle geplanten Jobs stoppen.

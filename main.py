@@ -269,11 +269,11 @@ async def lifespan(app: FastAPI):
                 logger.debug(f"Intraday-Update fehlgeschlagen: {e}")
 
         scheduler.add_job(
-            _intraday_price_update, "interval",
-            minutes=settings.PRICE_UPDATE_INTERVAL_MIN,
-            id="intraday_prices",
+            _intraday_price_update, "cron",
+            minute=f"*/{settings.PRICE_UPDATE_INTERVAL_MIN}",
             hour="8-22",  # Nur während Marktzeiten (CET)
-            day_of_week="mon-fri",  # Nur Werktage (DA3)
+            day_of_week="mon-fri",  # Nur Werktage
+            id="intraday_prices",
         )
         logger.info(f"📈 Intraday Kurs-Updates alle {settings.PRICE_UPDATE_INTERVAL_MIN}min (Mo-Fr 08-22 Uhr)")
 
@@ -395,7 +395,7 @@ if __name__ == "__main__":
 
     uvicorn.run(
         "main:app",
-        host=settings.SERVER_HOST,
+        host="127.0.0.1" if is_dev else settings.SERVER_HOST,
         port=settings.SERVER_PORT,
         # Reload bleibt aktiv in dev: Nach dem Full-Refresh blockiert ein
         # Background-Task (yfinance WS / tech_radar_ai) den Event-Loop.
@@ -407,4 +407,5 @@ if __name__ == "__main__":
             "middleware", "static",
         ] if is_dev else None,
         reload_includes=["*.py", "*.html", "*.js", "*.css"] if is_dev else None,
+        reload_excludes=["*.cache", "*.sqlite3", "*.db", "*.db-journal", "*.pyc", "__pycache__/*"] if is_dev else None,
     )
