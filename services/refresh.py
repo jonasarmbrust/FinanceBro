@@ -350,22 +350,16 @@ async def _do_refresh():
                 else:
                     logger.info(f"🤖 Score-Kommentare übersprungen (außerhalb Analysezeit)")
 
-            # AI Agent Telegram-Report NUR in Production senden
-            # (verhindert Doppel-Reports wenn Cloud + lokal gleichzeitig laufen)
-            # Lokal kann der Report manuell via Dashboard-Button getriggert werden.
+            # AI Agent Telegram-Report in Production senden
+            # Der Scheduler steuert WANN der Refresh läuft (16:15 CET),
+            # daher kein zusätzliches Zeitfenster-Gate nötig.
+            # Manuelle Refreshes senden ebenfalls einen Report.
             if settings.telegram_configured and settings.ENVIRONMENT == "production":
-                from datetime import datetime as _dt
-                import zoneinfo
-                _now = _dt.now(zoneinfo.ZoneInfo("Europe/Berlin"))
-                _is_scheduled_window = 15 <= _now.hour <= 16  # 15:30-17:00 CET
-                if _is_scheduled_window:
-                    try:
-                        from services.ai_agent import run_daily_report
-                        await run_daily_report()
-                    except Exception as e:
-                        logger.warning(f"AI Agent Report fehlgeschlagen: {e}")
-                else:
-                    logger.info(f"🤖 AI Agent übersprungen (außerhalb Analysezeit, aktuell {_now.strftime('%H:%M')})")
+                try:
+                    from services.ai_agent import run_daily_report
+                    await run_daily_report()
+                except Exception as e:
+                    logger.warning(f"AI Agent Report fehlgeschlagen: {e}")
             elif settings.telegram_configured:
                 logger.info("🤖 AI Agent übersprungen (nur in Production — manuell via Dashboard verfügbar)")
         except Exception as e:
