@@ -45,6 +45,12 @@ def _set_cached(key: str, data):
 @router.get("/api/market-indices")
 async def get_market_indices():
     """Tagesaktuelle Werte der wichtigsten Indizes (gecacht 15min)."""
+    # Demo-Modus: Synthetische Daten
+    summary = portfolio_data.get("summary")
+    if summary and summary.is_demo:
+        from fetchers.demo_data import get_demo_market_indices
+        return get_demo_market_indices()
+
     cached = _get_cached("market_indices")
     if cached is not None:
         return cached
@@ -139,10 +145,14 @@ async def get_dividends():
 
 @router.get("/api/benchmark")
 async def get_benchmark(symbol: str = "SPY", period: str = "6month"):
-    """Benchmark-Vergleich: Portfolio vs. Index (gecacht 15min).
+    """Benchmark-Vergleich: Portfolio vs. Index (gecacht 15min)."""
+    # Demo-Modus
+    summary_check = portfolio_data.get("summary")
+    if summary_check and summary_check.is_demo:
+        from fetchers.demo_data import get_demo_benchmark
+        days_map = {"1month": 30, "3month": 90, "6month": 180, "1year": 365}
+        return get_demo_benchmark(symbol, days_map.get(period, 180))
 
-    Unterstützt: SPY (S&P 500), IWDA.AS (MSCI World), QQQ (Nasdaq)
-    """
     if period not in ("1month", "3month", "6month", "1year"):
         period = "6month"
 
@@ -229,11 +239,16 @@ def _benchmark_name(symbol: str) -> str:
 @router.get("/api/correlation")
 async def get_correlation():
     """Korrelationsmatrix und Diversifikations-Score (gecacht 15min)."""
+    # Demo-Modus
+    summary = portfolio_data.get("summary")
+    if summary and summary.is_demo:
+        from fetchers.demo_data import get_demo_correlation
+        return get_demo_correlation()
+
     cached = _get_cached("correlation")
     if cached is not None:
         return cached
 
-    summary = portfolio_data.get("summary")
     if not summary or not summary.stocks:
         return JSONResponse({"error": "Keine Daten"}, status_code=503)
 
@@ -312,6 +327,12 @@ async def get_earnings_calendar():
 @router.get("/api/stock/{ticker}/news")
 async def get_stock_news(ticker: str, limit: int = 5):
     """News für eine einzelne Aktie."""
+    # Demo-Modus
+    summary = portfolio_data.get("summary")
+    if summary and summary.is_demo:
+        from fetchers.demo_data import get_demo_stock_news
+        return get_demo_stock_news(ticker.upper())[:limit]
+
     try:
         from fetchers.fmp import fetch_stock_news
         return await fetch_stock_news(ticker.upper(), limit=limit)
@@ -327,11 +348,16 @@ async def get_stock_news(ticker: str, limit: int = 5):
 @router.get("/api/risk")
 async def get_risk():
     """Portfolio-Risikokennzahlen: Beta, VaR, Max Drawdown (gecacht 15min)."""
+    # Demo-Modus
+    summary = portfolio_data.get("summary")
+    if summary and summary.is_demo:
+        from fetchers.demo_data import get_demo_risk
+        return get_demo_risk()
+
     cached = _get_cached("risk")
     if cached is not None:
         return cached
 
-    summary = portfolio_data.get("summary")
     if not summary or not summary.stocks:
         return JSONResponse({"error": "Keine Daten"}, status_code=503)
 
@@ -399,6 +425,12 @@ async def get_risk():
 @router.get("/api/stock/{ticker}/score-history")
 async def get_score_history(ticker: str, days: int = 30):
     """Score-Verlauf aus der bestehenden Score-Historie."""
+    # Demo-Modus
+    summary = portfolio_data.get("summary")
+    if summary and summary.is_demo:
+        from fetchers.demo_data import get_demo_score_history
+        return get_demo_score_history(ticker.upper(), days)
+
     from engine.analysis import get_score_trend
     trend = get_score_trend(ticker.upper(), days=days)
     return trend
@@ -597,10 +629,13 @@ async def get_portfolio_history_detail(period: str = "6month"):
 
 @router.get("/api/performance")
 async def get_portfolio_performance():
-    """Liefert die komplette Portfolio-Performance über die Parqet Connect API.
+    """Liefert die komplette Portfolio-Performance über die Parqet Connect API."""
+    # Demo-Modus
+    summary = portfolio_data.get("summary")
+    if summary and summary.is_demo:
+        from fetchers.demo_data import get_demo_performance
+        return get_demo_performance()
 
-    Enthält: KPIs, alle Holdings (aktiv + verkauft), Dividenden, Steuern, Gebühren.
-    """
     try:
         from fetchers.parqet import fetch_portfolio_performance
         result = await fetch_portfolio_performance()

@@ -11,10 +11,14 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
         rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 
 <body>
+    <!-- Toast Notification Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
     <!-- Demo Banner -->
     <div class="demo-banner" id="demoBanner">🎭 Demo-Modus — Fiktive Daten zu Präsentationszwecken</div>
 
@@ -22,7 +26,7 @@
     <header class="header" id="header">
         <div class="header-left">
             <h1 class="logo">
-                <span class="logo-icon">📊</span>
+                <span class="logo-icon"><i data-lucide="bar-chart-3"></i></span>
                 <span class="logo-text">FinanzBro</span>
             </h1>
             <span class="demo-badge" id="demoBadge" style="display:none;">DEMO</span>
@@ -47,75 +51,97 @@
         <div class="header-right">
             <span class="last-update" id="lastUpdate">–</span>
             <button class="btn-theme" id="themeToggle" onclick="toggleTheme()"
-                title="Farbschema wechseln">🌙</button>
+                title="Farbschema wechseln"><i data-lucide="moon"></i></button>
             <button class="btn-currency" id="currencyToggle" onclick="toggleCurrency()"
                 title="Währung wechseln">EUR</button>
-            <button class="btn-refresh btn-demo" id="btnDemo" onclick="toggleDemo()"
-                title="Demo-Portfolio mit fiktiven Daten laden">
-                <span class="refresh-icon">🎭</span> Demo
-            </button>
-            <button class="btn-refresh btn-parqet" id="btnUpdateParqet" onclick="updateParqet()"
-                title="Parqet-Positionen + aktuelle Kurse laden (~10s)">
-                <span class="refresh-icon">🔄</span> Update Parqet
-            </button>
-            <button class="btn-refresh btn-telegram" id="btnTelegramReport" onclick="triggerReport()"
-                title="AI-Analyse + Telegram Report manuell senden">
-                <span class="refresh-icon">📨</span> Telegram Report
-            </button>
-            <button class="btn-refresh" id="btnRefresh" onclick="refreshData()"
-                title="Komplette Analyse: Fundamentals, Scores, Analysten, Tech Picks etc.">
-                <span class="refresh-icon">🔬</span> Komplette Analyse
-            </button>
+            <!-- Action Dropdown -->
+            <div class="action-dropdown" id="actionDropdown">
+                <button class="action-dropdown-toggle" onclick="toggleActionMenu()">
+                    <i data-lucide="menu"></i> Aktionen
+                </button>
+                <div class="action-dropdown-menu" id="actionMenu">
+                    <button class="action-dropdown-item" id="btnUpdateParqet" onclick="updateParqet()">
+                        <i data-lucide="refresh-cw"></i> Update Parqet
+                    </button>
+                    <button class="action-dropdown-item" id="btnTelegramReport" onclick="triggerReport()">
+                        <i data-lucide="send"></i> Telegram Report
+                    </button>
+                    <div class="action-dropdown-divider"></div>
+                    <button class="action-dropdown-item" id="btnRefresh" onclick="refreshData()">
+                        <i data-lucide="microscope"></i> Komplette Analyse
+                    </button>
+                    <div class="action-dropdown-divider"></div>
+                    <button class="action-dropdown-item" id="btnDemo" onclick="toggleDemo()">
+                        <i data-lucide="drama"></i> Demo-Modus
+                    </button>
+                </div>
+            </div>
         </div>
     </header>
 
     <!-- Navigation Tabs -->
     <nav class="tabs" id="tabs">
         <button class="tab active" data-tab="overview" onclick="switchTab('overview')">
-            <span class="tab-icon">📈</span> Übersicht
+            <i data-lucide="trending-up"></i> Übersicht
         </button>
         <button class="tab" data-tab="analyse" onclick="switchTab('analyse')">
-            <span class="tab-icon">📊</span> Analyse
+            <i data-lucide="pie-chart"></i> Analyse
         </button>
         <button class="tab" data-tab="historie" onclick="switchTab('historie')">
-            <span class="tab-icon">📜</span> Historie
+            <i data-lucide="history"></i> Historie
         </button>
         <button class="tab" data-tab="rebalancing" onclick="switchTab('rebalancing')">
-            <span class="tab-icon">⚖️</span> Rebalancing
+            <i data-lucide="scale"></i> Rebalancing <span class="tab-badge" id="rebalancingBadge"></span>
         </button>
         <button class="tab" data-tab="techpicks" onclick="switchTab('techpicks')">
-            <span class="tab-icon">🚀</span> Tech Picks
+            <i data-lucide="rocket"></i> Tech Picks
         </button>
         <button class="tab" data-tab="advisor" onclick="switchTab('advisor')">
-            <span class="tab-icon">🧠</span> AI Advisor
+            <i data-lucide="brain"></i> AI Advisor
         </button>
+        <div class="tab-indicator" id="tabIndicator"></div>
     </nav>
 
     <!-- Main Content -->
     <main class="main">
-        <!-- Loading State -->
-        <div class="loading-overlay" id="loadingOverlay">
-            <div class="spinner"></div>
-            <p>Daten werden geladen...</p>
+        <!-- Skeleton Loading State -->
+        <div id="skeletonOverlay" style="display:none;">
+            <div class="stats-row">
+                <div class="skeleton skeleton-stat"></div>
+                <div class="skeleton skeleton-stat"></div>
+                <div class="skeleton skeleton-stat"></div>
+                <div class="skeleton skeleton-stat"></div>
+            </div>
+            <div class="skeleton skeleton-card" style="height:140px;margin-bottom:1rem;"></div>
+            <div class="skeleton skeleton-card" style="height:300px;"></div>
         </div>
 
         <!-- Tab: Overview -->
         <section class="tab-content active" id="tab-overview">
+            <!-- AI Insight Widget -->
+            <div class="ai-insight-card" id="aiInsightWidget" style="display:none;">
+                <div class="ai-insight-header">
+                    <i data-lucide="sparkles"></i>
+                    <span class="ai-insight-title">AI Portfolio Insight</span>
+                </div>
+                <div class="ai-insight-text" id="aiInsightText"></div>
+            </div>
+
             <!-- Stats Row -->
             <div class="stats-row" id="statsRow">
-                <div class="stat-card">
+                <div class="stat-card stagger-in">
                     <span class="stat-label">Positionen</span>
                     <span class="stat-value" id="statPositions">0</span>
                 </div>
-                <div class="stat-card stat-buy">
+                <div class="stat-card stat-buy stagger-in">
                     <span class="stat-label">🟢 Buy</span>
                     <span class="stat-value" id="statBuy">0</span>
                 </div>
-                <div class="stat-card stat-hold">
+                <div class="stat-card stat-hold stagger-in">
                     <span class="stat-label">🟡 Hold</span>
                     <span class="stat-value" id="statHold">0</span>
                 </div>
-                <div class="stat-card stat-sell">
+                <div class="stat-card stat-sell stagger-in">
                     <span class="stat-label">🔴 Sell</span>
                     <span class="stat-value" id="statSell">0</span>
                 </div>
@@ -133,10 +159,10 @@
                 </div>
             </div>
 
-            <!-- Portfolio Heatmap -->
+            <!-- Portfolio Heatmap (Treemap) -->
             <div class="chart-card" style="margin-bottom:1rem;">
                 <h3 class="chart-title">🗺️ Portfolio-Heatmap</h3>
-                <div class="heatmap-container" id="heatmapContainer"></div>
+                <div class="treemap-container" id="heatmapContainer"></div>
             </div>
 
             <!-- Portfolio Table -->
@@ -189,6 +215,8 @@
                         </tbody>
                     </table>
                 </div>
+                <!-- Mobile Card View -->
+                <div class="stock-cards" id="stockCards"></div>
             </div>
         </section>
 
@@ -252,28 +280,28 @@
             <!-- Performance KPI Cards -->
             <div class="performance-kpis" id="performanceKpis" style="display:none;">
                 <div class="kpi-grid">
-                    <div class="kpi-card kpi-valuation">
+                    <div class="kpi-card kpi-valuation stagger-in">
                         <span class="kpi-label">📊 Gesamtwert</span>
                         <span class="kpi-value" id="kpiValuation">—</span>
                     </div>
-                    <div class="kpi-card kpi-unrealized">
+                    <div class="kpi-card kpi-unrealized stagger-in">
                         <span class="kpi-label">📈 Unrealisiert</span>
                         <span class="kpi-value" id="kpiUnrealized">—</span>
                         <span class="kpi-sub" id="kpiUnrealizedPct"></span>
                     </div>
-                    <div class="kpi-card kpi-realized">
+                    <div class="kpi-card kpi-realized stagger-in">
                         <span class="kpi-label">💰 Realisiert</span>
                         <span class="kpi-value" id="kpiRealized">—</span>
                     </div>
-                    <div class="kpi-card kpi-dividends">
+                    <div class="kpi-card kpi-dividends stagger-in">
                         <span class="kpi-label">🪙 Dividenden</span>
                         <span class="kpi-value" id="kpiDividends">—</span>
                     </div>
-                    <div class="kpi-card kpi-taxes">
+                    <div class="kpi-card kpi-taxes stagger-in">
                         <span class="kpi-label">🏛️ Steuern</span>
                         <span class="kpi-value" id="kpiTaxes">—</span>
                     </div>
-                    <div class="kpi-card kpi-fees">
+                    <div class="kpi-card kpi-fees stagger-in">
                         <span class="kpi-label">💳 Gebühren</span>
                         <span class="kpi-value" id="kpiFees">—</span>
                     </div>
@@ -319,10 +347,10 @@
                 <!-- Mode Toggle -->
                 <div class="advisor-mode-toggle">
                     <button class="advisor-mode-btn active" id="advisorModeAnalyse" onclick="switchAdvisorMode('analyse')">
-                        🔍 Trade-Analyse
+                        <i data-lucide="search"></i> Trade-Analyse
                     </button>
                     <button class="advisor-mode-btn" id="advisorModeChat" onclick="switchAdvisorMode('chat')">
-                        💬 Chat
+                        <i data-lucide="message-circle"></i> Chat
                     </button>
                 </div>
 
@@ -361,7 +389,7 @@
                             </div>
 
                             <button class="advisor-submit-btn" id="advisorSubmitBtn" onclick="submitAdvisorQuery()">
-                                <span class="advisor-btn-text">🔍 Analyse starten</span>
+                                <span class="advisor-btn-text"><i data-lucide="search"></i> Analyse starten</span>
                                 <span class="advisor-btn-loading" style="display:none;">⏳ AI analysiert...</span>
                             </button>
                         </div>
@@ -406,20 +434,60 @@
         </section>
     </main>
 
-    <!-- Stock Detail Modal -->
-    <div class="modal-overlay" id="stockModal" onclick="closeModal(event)">
-        <div class="modal" onclick="event.stopPropagation()">
-            <button class="modal-close" onclick="closeModal()">✕</button>
-            <div class="modal-header" id="modalHeader">
-                <h2 class="modal-title" id="modalTitle">–</h2>
-                <div class="modal-rating" id="modalRating">–</div>
-            </div>
-            <div class="modal-body" id="modalBody">
-            </div>
+    <!-- Stock Detail Slide-Over Panel -->
+    <div class="slide-panel-overlay" id="stockPanelOverlay" onclick="closeStockPanel()"></div>
+    <div class="slide-panel" id="stockPanel">
+        <button class="modal-close" onclick="closeStockPanel()">✕</button>
+        <div class="modal-header" id="modalHeader">
+            <h2 class="modal-title" id="modalTitle">–</h2>
+            <div class="modal-rating" id="modalRating">–</div>
         </div>
+        <!-- Panel Inner Tabs -->
+        <div class="panel-tabs" id="panelTabs">
+            <button class="panel-tab active" onclick="switchPanelTab('overview', this)">Übersicht</button>
+            <button class="panel-tab" onclick="switchPanelTab('fundamentals', this)">Fundamentals</button>
+            <button class="panel-tab" onclick="switchPanelTab('technical', this)">Technisch</button>
+            <button class="panel-tab" onclick="switchPanelTab('news', this)">News</button>
+        </div>
+        <div id="panelContent-overview" class="panel-tab-content active"></div>
+        <div id="panelContent-fundamentals" class="panel-tab-content"></div>
+        <div id="panelContent-technical" class="panel-tab-content"></div>
+        <div id="panelContent-news" class="panel-tab-content"></div>
     </div>
 
+    <!-- Mobile Bottom Navigation -->
+    <nav class="bottom-nav" id="bottomNav">
+        <div class="bottom-nav-inner">
+            <button class="bottom-nav-item active" data-tab="overview" onclick="switchTab('overview'); updateBottomNav(this);">
+                <i data-lucide="trending-up"></i>
+                <span>Übersicht</span>
+            </button>
+            <button class="bottom-nav-item" data-tab="analyse" onclick="switchTab('analyse'); updateBottomNav(this);">
+                <i data-lucide="pie-chart"></i>
+                <span>Analyse</span>
+            </button>
+            <button class="bottom-nav-item" data-tab="rebalancing" onclick="switchTab('rebalancing'); updateBottomNav(this);">
+                <i data-lucide="scale"></i>
+                <span>Rebalance</span>
+            </button>
+            <button class="bottom-nav-item" data-tab="techpicks" onclick="switchTab('techpicks'); updateBottomNav(this);">
+                <i data-lucide="rocket"></i>
+                <span>Picks</span>
+            </button>
+            <button class="bottom-nav-item" data-tab="advisor" onclick="switchTab('advisor'); updateBottomNav(this);">
+                <i data-lucide="brain"></i>
+                <span>AI</span>
+            </button>
+        </div>
+    </nav>
+
     <script src="/static/app.js"></script>
+    <script>
+        // Initialize Lucide icons after DOM is ready
+        document.addEventListener('DOMContentLoaded', () => {
+            if (window.lucide) lucide.createIcons();
+        });
+    </script>
 </body>
 
 </html>

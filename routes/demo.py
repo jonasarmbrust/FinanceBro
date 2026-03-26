@@ -115,6 +115,27 @@ async def activate_demo():
         summary = build_demo_portfolio()
         portfolio_data["summary"] = summary
         portfolio_data["last_refresh"] = datetime.now(tz=TZ_BERLIN)
+
+        # Analyse-Report generieren (für Analyse-Tab)
+        try:
+            from engine.analysis import build_analysis_report
+            report = build_analysis_report(
+                stocks_with_scores=summary.stocks,
+                analysis_level="full",
+                total_portfolio_value=summary.total_value,
+            )
+            portfolio_data["last_analysis"] = report
+            logger.info(f"📊 Demo-Analyse generiert: Score {report.portfolio_score:.1f}")
+        except Exception as e:
+            logger.warning(f"Demo-Analyse konnte nicht generiert werden: {e}")
+
+        # Activities speichern (für Activities-Tab)
+        try:
+            from fetchers.demo_data import get_demo_activities
+            portfolio_data["activities"] = get_demo_activities()
+        except Exception:
+            pass
+
         logger.info(f"🎭 Demo-Modus aktiviert: {summary.num_positions} Positionen, Wert: €{summary.total_value:,.2f}")
         return {
             "status": "ok",

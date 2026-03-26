@@ -26,8 +26,12 @@ function toDisplay(eurValue) {
 
 // ==================== Init ====================
 document.addEventListener('DOMContentLoaded', () => {
+    showSkeleton(true);
     loadPortfolio();
     startPriceStream();
+    initScrollHeader();
+    updateTabIndicator();
+    window.addEventListener('resize', updateTabIndicator);
 });
 
 async function loadPortfolio() {
@@ -61,6 +65,8 @@ function renderDashboard() {
     renderTable();
     renderRebalancing();
     renderTechPicks();
+    renderAIInsight();
+    updateRebalancingBadge();
 
     // Lazy-load Analyse tab data if visible
     const analyseTab = document.getElementById('tab-analyse');
@@ -68,7 +74,9 @@ function renderDashboard() {
         renderAnalyseTab();
     }
 
-    showLoading(false);
+    showSkeleton(false);
+    // Re-create Lucide icons for dynamically added content
+    if (window.lucide) lucide.createIcons();
 }
 
 function renderHeader() {
@@ -302,8 +310,10 @@ function renderTable() {
             return `<span class="src-dot ${ok ? 'src-ok' : 'src-miss'}" title="${k}: ${ok ? '✓' : '✗'}"></span>`;
         }).join('');
 
+        const dailyRowClass = dailyPct > 0 ? 'row-positive' : dailyPct < 0 ? 'row-negative' : '';
+
         return `
-            <tr data-ticker="${pos.ticker}" data-rating="${rating}">
+            <tr data-ticker="${pos.ticker}" data-rating="${rating}" class="${dailyRowClass}">
                 <td>
                     <div class="stock-info">
                         <div>
@@ -364,6 +374,31 @@ function renderTable() {
                 <td></td>
             </tr>
         `;
+    }
+
+    // Mobile card view
+    const cardContainer = document.getElementById('stockCards');
+    if (cardContainer) {
+        cardContainer.innerHTML = stocks.map(s => {
+            const pos = s.position;
+            const score = s.score;
+            const rating = score?.rating || 'hold';
+            const dailyPct = pos.daily_change_pct;
+            const dailySign = dailyPct != null && dailyPct >= 0 ? '+' : '';
+            const dailyColor = dailyPct > 0 ? 'var(--green)' : dailyPct < 0 ? 'var(--red)' : 'var(--text-muted)';
+            return `
+                <div class="stock-card-mobile" onclick="openStockDetail('${pos.ticker}')">
+                    <div class="stock-card-left">
+                        <span class="stock-card-ticker">${pos.ticker} <span class="rating-badge rating-${rating}" style="font-size:0.6rem;padding:0.15rem 0.4rem;">${rating.toUpperCase()}</span></span>
+                        <span class="stock-card-name">${pos.name || pos.ticker}</span>
+                    </div>
+                    <div class="stock-card-right">
+                        <span class="stock-card-price">${formatCurrency(toDisplay(pos.current_price))}</span>
+                        <span class="stock-card-change" style="color:${dailyColor}">${dailyPct != null ? dailySign + dailyPct.toFixed(2) + '%' : '–'}</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
     }
 }
 
@@ -539,9 +574,9 @@ async function openStockDetail(ticker) {
         </span>
     `;
 
-    // Body
-    let bodyHTML = '';
-
+    // ---- Distribute content into panel tabs ----
+    // Overview tab: Data sources + Score breakdown + Price chart + Score history + Summary
+    let overviewHTML = '';
     // Data Source Status
     const ds = stock.data_sources || {};
     const srcItems = [
@@ -551,7 +586,7 @@ async function openStockDetail(ticker) {
         { key: 'yfinance', label: 'Yahoo' },
         { key: 'fear_greed', label: 'Fear&Greed' },
     ];
-    bodyHTML += `
+    overviewHTML += `
         <div class="modal-section">
             <div class="modal-section-title">Datenquellen</div>
             <div class="source-status-row">
@@ -568,7 +603,7 @@ async function openStockDetail(ticker) {
     if (score?.breakdown) {
         const bd = score.breakdown;
         const items = [
-            { label: 'Qualit\u00e4t', value: bd.quality_score || bd.fundamental_score || 0, weight: '20%' },
+            { label: 'Qualität', value: bd.quality_score || bd.fundamental_score || 0, weight: '20%' },
             { label: 'Bewertung', value: bd.valuation_score || 0, weight: '15%' },
             { label: 'Analysten', value: bd.analyst_score || 0, weight: '15%' },
             { label: 'Technisch', value: bd.technical_score || 0, weight: '15%' },
@@ -578,14 +613,13 @@ async function openStockDetail(ticker) {
             { label: 'Insider', value: bd.insider_score || 0, weight: '3%' },
             { label: 'ESG', value: bd.esg_score || 0, weight: '2%' },
         ];
-
-        bodyHTML += `
+        overviewHTML += `
             <div class="modal-section">
                 <div class="modal-section-title">Score-Aufschlüsselung</div>
                 <div class="modal-breakdown">
                     ${items.map(it => {
-            const color = it.value >= 70 ? '#22c55e' : it.value >= 40 ? '#eab308' : '#ef4444';
-            return `
+                        const color = it.value >= 70 ? '#22c55e' : it.value >= 40 ? '#eab308' : '#ef4444';
+                        return `
                             <div class="breakdown-item">
                                 <span class="breakdown-label">${it.label} (${it.weight})</span>
                                 <div class="breakdown-bar-track">
@@ -594,20 +628,55 @@ async function openStockDetail(ticker) {
                                 <span class="breakdown-value" style="color:${color}">${it.value.toFixed(0)}</span>
                             </div>
                         `;
-        }).join('')}
+                    }).join('')}
                 </div>
             </div>
         `;
     }
 
-    // Fundamentals
+    // Price chart
+    overviewHTML += `
+        <div class="modal-section">
+            <div class="modal-section-title">📊 Kursverlauf</div>
+            <div class="modal-chart-controls">
+                <button class="filter-btn active" onclick="loadStockChart('${pos.ticker}', '1month', this)">1M</button>
+                <button class="filter-btn" onclick="loadStockChart('${pos.ticker}', '3month', this)">3M</button>
+                <button class="filter-btn" onclick="loadStockChart('${pos.ticker}', '6month', this)">6M</button>
+                <button class="filter-btn" onclick="loadStockChart('${pos.ticker}', '1year', this)">1Y</button>
+            </div>
+            <div style="height:180px;position:relative;">
+                <canvas id="stockPriceChart"></canvas>
+            </div>
+        </div>
+    `;
+
+    // Score-History Chart
+    overviewHTML += `
+        <div class="modal-section">
+            <div class="modal-section-title">📈 Score-Verlauf</div>
+            <div style="height:140px;position:relative;">
+                <canvas id="scoreHistoryChart"></canvas>
+            </div>
+        </div>
+    `;
+
+    if (score?.summary) {
+        overviewHTML += `
+            <div class="modal-section">
+                <div class="modal-summary">${score.summary}</div>
+            </div>
+        `;
+    }
+
+    // Fundamentals tab
+    let fundHTML = '';
     if (fd) {
         const fmtPct = (v) => {
             if (v == null) return null;
             const pct = Math.abs(v) < 5 ? v * 100 : v;
             return pct.toFixed(1) + '%';
         };
-        bodyHTML += `
+        fundHTML += `
             <div class="modal-section">
                 <div class="modal-section-title">Fundamentaldaten</div>
                 <div class="modal-metrics">
@@ -629,10 +698,8 @@ async function openStockDetail(ticker) {
             </div>
         `;
     }
-
-    // Analyst Data
     if (analyst && analyst.num_analysts > 0) {
-        bodyHTML += `
+        fundHTML += `
             <div class="modal-section">
                 <div class="modal-section-title">Analysten (${analyst.num_analysts})</div>
                 <div class="modal-metrics">
@@ -644,40 +711,15 @@ async function openStockDetail(ticker) {
                     ${metricItem('Sell', analyst.sell_count)}
                     ${metricItem('Strong Sell', analyst.strong_sell_count)}
                     ${metricItem('Upside', analyst.target_price && pos.current_price > 0
-            ? ((analyst.target_price - pos.current_price) / pos.current_price * 100).toFixed(1) + '%'
-            : null)}
+                        ? ((analyst.target_price - pos.current_price) / pos.current_price * 100).toFixed(1) + '%'
+                        : null)}
                 </div>
             </div>
         `;
     }
-
-    // Technical Indicators
-    const tech = stock.technical;
-    if (tech && (tech.rsi_14 != null || tech.sma_cross || tech.momentum_30d != null)) {
-        const signalEmoji = tech.signal === 'Bullish' ? '📈' : tech.signal === 'Bearish' ? '📉' : '➡️';
-        const rsiLabel = tech.rsi_14 != null ?
-            (tech.rsi_14 > 70 ? '⚠️ Überkauft' : tech.rsi_14 < 30 ? '⚠️ Überverkauft' : '✅ Normal') : null;
-        const crossLabel = tech.sma_cross === 'golden' ? '🟢 Golden Cross' : tech.sma_cross === 'death' ? '🔴 Death Cross' : '➡️ Neutral';
-        bodyHTML += `
-            <div class="modal-section">
-                <div class="modal-section-title">Technische Indikatoren</div>
-                <div class="modal-metrics">
-                    ${metricItem('Signal', signalEmoji + ' ' + tech.signal)}
-                    ${metricItem('RSI(14)', tech.rsi_14 != null ? tech.rsi_14.toFixed(1) + ' (' + rsiLabel + ')' : null)}
-                    ${metricItem('SMA Cross', crossLabel)}
-                    ${metricItem('Momentum 30T', tech.momentum_30d != null ? (tech.momentum_30d > 0 ? '+' : '') + tech.momentum_30d.toFixed(1) + '%' : null)}
-                    ${metricItem('SMA 50', tech.sma_50 != null ? tech.sma_50.toFixed(2) : null)}
-                    ${metricItem('SMA 200', tech.sma_200 != null ? tech.sma_200.toFixed(2) : null)}
-                    ${metricItem('Preis vs SMA50', tech.price_vs_sma50 != null ? (tech.price_vs_sma50 > 0 ? '+' : '') + tech.price_vs_sma50.toFixed(1) + '%' : null)}
-                </div>
-            </div>
-        `;
-    }
-
-    // FMP Rating
     const fmpRating = stock.fmp_rating;
     if (fmpRating && fmpRating.rating) {
-        bodyHTML += `
+        fundHTML += `
             <div class="modal-section">
                 <div class="modal-section-title">FMP Rating</div>
                 <div class="modal-metrics">
@@ -693,8 +735,6 @@ async function openStockDetail(ticker) {
             </div>
         `;
     }
-
-    // yFinance Data
     const yf = stock.yfinance;
     if (yf && (yf.recommendation_trend || yf.esg_risk_score != null || yf.insider_buy_count > 0 || yf.insider_sell_count > 0)) {
         const insiderTotal = (yf.insider_buy_count || 0) + (yf.insider_sell_count || 0);
@@ -702,7 +742,7 @@ async function openStockDetail(ticker) {
         const esgLabel = yf.esg_risk_score != null ?
             (yf.esg_risk_score <= 10 ? '🟢 Niedrig' : yf.esg_risk_score <= 20 ? '🟢 Gering' :
                 yf.esg_risk_score <= 30 ? '🟡 Mittel' : yf.esg_risk_score <= 40 ? '🟠 Hoch' : '🔴 Sehr hoch') : null;
-        bodyHTML += `
+        fundHTML += `
             <div class="modal-section">
                 <div class="modal-section-title">Yahoo Finance</div>
                 <div class="modal-metrics">
@@ -716,30 +756,10 @@ async function openStockDetail(ticker) {
             </div>
         `;
     }
-
-    // AlphaVantage Data
-    const av = stock.alphavantage;
-    if (av && (av.news_sentiment != null || av.rsi_14 != null || av.macd_signal)) {
-        const sentimentLabel = av.news_sentiment != null ?
-            (av.news_sentiment > 0.15 ? '📈 Positiv' : av.news_sentiment < -0.15 ? '📉 Negativ' : '➡️ Neutral') : null;
-        const rsiLabel = av.rsi_14 != null ?
-            (av.rsi_14 > 70 ? '⚠️ Überkauft' : av.rsi_14 < 30 ? '⚠️ Überverkauft' : '✅ Normal') : null;
-        bodyHTML += `
-            <div class="modal-section">
-                <div class="modal-section-title">Alpha Vantage</div>
-                <div class="modal-metrics">
-                    ${metricItem('News Sentiment', av.news_sentiment != null ? av.news_sentiment.toFixed(3) + ' (' + sentimentLabel + ')' : null)}
-                    ${metricItem('RSI (14)', av.rsi_14 != null ? av.rsi_14.toFixed(1) + ' (' + rsiLabel + ')' : null)}
-                    ${metricItem('MACD Signal', av.macd_signal)}
-                </div>
-            </div>
-        `;
-    }
-
     // Dividend Info
     const div = stock.dividend;
     if (div && (div.yield_percent || div.annual_dividend)) {
-        bodyHTML += `
+        fundHTML += `
             <div class="modal-section">
                 <div class="modal-section-title">💰 Dividende</div>
                 <div class="modal-metrics">
@@ -752,57 +772,75 @@ async function openStockDetail(ticker) {
         `;
     }
 
-    // Stock Price Chart placeholder
-    bodyHTML += `
-        <div class="modal-section">
-            <div class="modal-section-title">📊 Kursverlauf</div>
-            <div class="modal-chart-controls">
-                <button class="filter-btn active" onclick="loadStockChart('${pos.ticker}', '1month', this)">1M</button>
-                <button class="filter-btn" onclick="loadStockChart('${pos.ticker}', '3month', this)">3M</button>
-                <button class="filter-btn" onclick="loadStockChart('${pos.ticker}', '6month', this)">6M</button>
-                <button class="filter-btn" onclick="loadStockChart('${pos.ticker}', '1year', this)">1Y</button>
-            </div>
-            <div style="height:200px;position:relative;">
-                <canvas id="stockPriceChart"></canvas>
-            </div>
-        </div>
-    `;
-
-    // Score-History Chart (#9)
-    bodyHTML += `
-        <div class="modal-section">
-            <div class="modal-section-title">📈 Score-Verlauf</div>
-            <div style="height:160px;position:relative;">
-                <canvas id="scoreHistoryChart"></canvas>
-            </div>
-        </div>
-    `;
-
-    // News section (#7)
-    bodyHTML += `
-        <div class="modal-section">
-            <div class="modal-section-title">📰 Aktuelle News</div>
-            <div id="stockNewsContainer"><div class="loading-text">News werden geladen...</div></div>
-        </div>
-    `;
-
-    // Summary
-    if (score?.summary) {
-        bodyHTML += `
+    // Technical tab
+    let techHTML = '';
+    const tech = stock.technical;
+    if (tech && (tech.rsi_14 != null || tech.sma_cross || tech.momentum_30d != null)) {
+        const signalEmoji = tech.signal === 'Bullish' ? '📈' : tech.signal === 'Bearish' ? '📉' : '➡️';
+        const rsiLabel = tech.rsi_14 != null ?
+            (tech.rsi_14 > 70 ? '⚠️ Überkauft' : tech.rsi_14 < 30 ? '⚠️ Überverkauft' : '✅ Normal') : null;
+        const crossLabel = tech.sma_cross === 'golden' ? '🟢 Golden Cross' : tech.sma_cross === 'death' ? '🔴 Death Cross' : '➡️ Neutral';
+        techHTML += `
             <div class="modal-section">
-                <div class="modal-summary">${score.summary}</div>
+                <div class="modal-section-title">Technische Indikatoren</div>
+                <div class="modal-metrics">
+                    ${metricItem('Signal', signalEmoji + ' ' + tech.signal)}
+                    ${metricItem('RSI(14)', tech.rsi_14 != null ? tech.rsi_14.toFixed(1) + ' (' + rsiLabel + ')' : null)}
+                    ${metricItem('SMA Cross', crossLabel)}
+                    ${metricItem('Momentum 30T', tech.momentum_30d != null ? (tech.momentum_30d > 0 ? '+' : '') + tech.momentum_30d.toFixed(1) + '%' : null)}
+                    ${metricItem('SMA 50', tech.sma_50 != null ? tech.sma_50.toFixed(2) : null)}
+                    ${metricItem('SMA 200', tech.sma_200 != null ? tech.sma_200.toFixed(2) : null)}
+                    ${metricItem('Preis vs SMA50', tech.price_vs_sma50 != null ? (tech.price_vs_sma50 > 0 ? '+' : '') + tech.price_vs_sma50.toFixed(1) + '%' : null)}
+                </div>
             </div>
         `;
     }
+    const av = stock.alphavantage;
+    if (av && (av.news_sentiment != null || av.rsi_14 != null || av.macd_signal)) {
+        const sentimentLabel = av.news_sentiment != null ?
+            (av.news_sentiment > 0.15 ? '📈 Positiv' : av.news_sentiment < -0.15 ? '📉 Negativ' : '➡️ Neutral') : null;
+        const avRsiLabel = av.rsi_14 != null ?
+            (av.rsi_14 > 70 ? '⚠️ Überkauft' : av.rsi_14 < 30 ? '⚠️ Überverkauft' : '✅ Normal') : null;
+        techHTML += `
+            <div class="modal-section">
+                <div class="modal-section-title">Alpha Vantage</div>
+                <div class="modal-metrics">
+                    ${metricItem('News Sentiment', av.news_sentiment != null ? av.news_sentiment.toFixed(3) + ' (' + sentimentLabel + ')' : null)}
+                    ${metricItem('RSI (14)', av.rsi_14 != null ? av.rsi_14.toFixed(1) + ' (' + avRsiLabel + ')' : null)}
+                    ${metricItem('MACD Signal', av.macd_signal)}
+                </div>
+            </div>
+        `;
+    }
+    if (!techHTML) techHTML = '<div class="empty-state">Keine technischen Daten verfügbar</div>';
 
-    document.getElementById('modalBody').innerHTML = bodyHTML;
-    modal.classList.add('active');
+    // News tab
+    let newsHTML = '<div id="stockNewsContainer"><div class="loading-text">News werden geladen...</div></div>';
+
+    // Write to panel tabs
+    document.getElementById('panelContent-overview').innerHTML = overviewHTML;
+    document.getElementById('panelContent-fundamentals').innerHTML = fundHTML || '<div class="empty-state">Keine Fundamentaldaten verfügbar</div>';
+    document.getElementById('panelContent-technical').innerHTML = techHTML;
+    document.getElementById('panelContent-news').innerHTML = newsHTML;
+
+    // Reset panel tabs to first tab
+    document.querySelectorAll('.panel-tab').forEach((t, i) => t.classList.toggle('active', i === 0));
+    document.querySelectorAll('.panel-tab-content').forEach((c, i) => c.classList.toggle('active', i === 0));
+
+    // Open slide-over panel
+    document.getElementById('stockPanelOverlay').classList.add('active');
+    setTimeout(() => {
+        document.getElementById('stockPanel').classList.add('open');
+    }, 10);
+
     // Auto-load stock chart
     loadStockChart(pos.ticker, '3month');
     // Load score history
     loadScoreHistory(pos.ticker);
     // Load news
     loadStockNews(pos.ticker);
+    // Re-create Lucide icons
+    if (window.lucide) lucide.createIcons();
 }
 
 function metricItem(label, value) {
@@ -814,15 +852,21 @@ function metricItem(label, value) {
     `;
 }
 
-function closeModal(event) {
-    if (event && event.target !== document.getElementById('stockModal')) return;
-    document.getElementById('stockModal').classList.remove('active');
+function closeStockPanel() {
+    document.getElementById('stockPanel').classList.remove('open');
+    document.getElementById('stockPanelOverlay').classList.remove('active');
 }
 
-// Close on click outside or argument-less call
+// Legacy compatibility
+function closeModal(event) { closeStockPanel(); }
+
+// Close on Escape
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-        document.getElementById('stockModal').classList.remove('active');
+        closeStockPanel();
+        // Close action dropdown
+        const menu = document.getElementById('actionMenu');
+        if (menu) menu.classList.remove('open');
     }
 });
 
@@ -831,8 +875,17 @@ function switchTab(tab) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
 
-    document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+    const tabBtn = document.querySelector(`.tabs [data-tab="${tab}"]`);
+    if (tabBtn) tabBtn.classList.add('active');
     document.getElementById(`tab-${tab}`).classList.add('active');
+
+    // Animate tab indicator
+    updateTabIndicator();
+
+    // Sync bottom nav
+    document.querySelectorAll('.bottom-nav-item').forEach(b => {
+        b.classList.toggle('active', b.dataset.tab === tab);
+    });
 
     // Load analyse tab data on first view
     if (tab === 'analyse') {
@@ -1010,14 +1063,17 @@ async function updateParqet() {
 
         if (result.status === 'done') {
             lastUpdate.textContent = `✅ ${result.positions} Positionen, ${result.total_eur?.toLocaleString('de-DE', { minimumFractionDigits: 2 })} EUR (Cash: ${result.cash_eur?.toLocaleString('de-DE', { minimumFractionDigits: 2 })} EUR)`;
+            showToast(`${result.positions} Positionen aktualisiert`, 'success');
             // Reload portfolio data
             await loadPortfolio();
         } else {
             lastUpdate.textContent = `⚠️ ${result.message || 'Fehler'}`;
+            showToast(result.message || 'Update fehlgeschlagen', 'warning');
         }
     } catch (err) {
         console.error('Update Parqet fehlgeschlagen:', err);
         lastUpdate.textContent = '❌ Update fehlgeschlagen';
+        showToast('Parqet-Update fehlgeschlagen', 'error');
     } finally {
         btn.classList.remove('refreshing');
         btn.disabled = false;
@@ -1038,12 +1094,15 @@ async function triggerReport() {
 
         if (result.status === 'started') {
             lastUpdate.textContent = `📨 ${result.message}`;
+            showToast('Telegram Report wird gesendet', 'success');
         } else {
             lastUpdate.textContent = `⚠️ ${result.message}`;
+            showToast(result.message, 'warning');
         }
     } catch (err) {
         console.error('Telegram Report fehlgeschlagen:', err);
         lastUpdate.textContent = '❌ Report fehlgeschlagen';
+        showToast('Telegram Report fehlgeschlagen', 'error');
     } finally {
         // Button nach 3s wieder freigeben (Report läuft im Background)
         setTimeout(() => {
@@ -1136,11 +1195,15 @@ function formatLargeNumber(val) {
     return formatCurrency(displayVal);
 }
 
-function showLoading(show) {
-    const overlay = document.getElementById('loadingOverlay');
-    if (show) overlay.classList.add('active');
-    else overlay.classList.remove('active');
+function showSkeleton(show) {
+    const skeleton = document.getElementById('skeletonOverlay');
+    const content = document.getElementById('tab-overview');
+    if (skeleton) skeleton.style.display = show ? 'block' : 'none';
+    if (content) content.style.display = show ? 'none' : 'block';
 }
+
+// Legacy compatibility
+function showLoading(show) { showSkeleton(show); }
 
 // ==================== Live Price Stream (SSE) ====================
 function startPriceStream() {
@@ -1384,23 +1447,29 @@ async function renderHeatmap() {
         const container = document.getElementById('heatmapContainer');
         if (!data.length) { container.innerHTML = '<div class="empty-state">Keine Daten</div>'; return; }
 
-        // Sort: biggest winners first, biggest losers last
-        data.sort((a, b) => b.daily_pct - a.daily_pct);
+        // Sort by weight descending for treemap
+        data.sort((a, b) => b.weight - a.weight);
 
-        // Equal distribution across 2 rows
-        const cols = Math.ceil(data.length / 2);
-        container.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+        // Calculate total weight for treemap proportions
+        const totalWeight = data.reduce((sum, d) => sum + d.weight, 0) || 1;
+        const containerWidth = container.offsetWidth || 800;
 
+        container.className = 'treemap-container';
         container.innerHTML = data.map(d => {
             const pct = d.daily_pct;
-            const bg = pct > 2 ? '#166534' : pct > 0.5 ? '#15803d' : pct > 0 ? '#22c55e40'
-                : pct > -0.5 ? '#ef444440' : pct > -2 ? '#dc2626' : '#991b1b';
+            const bg = pct > 2 ? '#166534' : pct > 0.5 ? '#15803d' : pct > 0 ? 'rgba(34,197,94,0.25)'
+                : pct > -0.5 ? 'rgba(239,68,68,0.25)' : pct > -2 ? '#dc2626' : '#991b1b';
             const textColor = Math.abs(pct) > 0.5 ? '#fff' : '#94a3b8';
+            // Treemap: cell width proportional to weight, minimum 60px
+            const widthPct = Math.max((d.weight / totalWeight) * 100, 5);
+            const height = d.weight > 8 ? '90px' : d.weight > 4 ? '70px' : '55px';
             return `
-                <div class="heatmap-cell" style="background:${bg};" 
-                     title="${d.name}\n${d.sector}\nGewicht: ${d.weight.toFixed(1)}%\nHeute: ${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%\nScore: ${d.score}/100">
-                    <span class="heatmap-ticker" style="color:${textColor}">${d.ticker}</span>
-                    <span class="heatmap-pct" style="color:${textColor}">${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%</span>
+                <div class="treemap-cell" style="background:${bg};flex:${widthPct} 1 0;height:${height};" 
+                     title="${d.name}\n${d.sector}\nGewicht: ${d.weight.toFixed(1)}%\nHeute: ${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%\nScore: ${d.score}/100"
+                     onclick="openStockDetail('${d.ticker}')">
+                    <span class="treemap-ticker" style="color:${textColor}">${d.ticker}</span>
+                    <span class="treemap-pct" style="color:${textColor}">${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%</span>
+                    <span class="treemap-weight" style="color:${textColor}">${d.weight.toFixed(1)}%</span>
                 </div>
             `;
         }).join('');
@@ -2815,3 +2884,220 @@ function toggleTickerFilter(ticker, btn) {
         renderHistorieChart(_lastHistorieData);
     }
 }
+
+// ==================== Toast Notifications ====================
+function showToast(message, type = 'info', duration = 4000) {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+
+    const icons = {
+        success: '<i data-lucide="check-circle"></i>',
+        error: '<i data-lucide="x-circle"></i>',
+        warning: '<i data-lucide="alert-triangle"></i>',
+        info: '<i data-lucide="info"></i>',
+    };
+
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.innerHTML = `
+        ${icons[type] || icons.info}
+        <span>${message}</span>
+        <button class="toast-close" onclick="this.parentElement.remove()"><i data-lucide="x" style="width:14px;height:14px;"></i></button>
+    `;
+    container.appendChild(toast);
+    if (window.lucide) lucide.createIcons({ nodes: [toast] });
+
+    // Auto-remove
+    setTimeout(() => {
+        toast.classList.add('removing');
+        setTimeout(() => toast.remove(), 300);
+    }, duration);
+}
+
+// ==================== Action Dropdown ====================
+function toggleActionMenu() {
+    const menu = document.getElementById('actionMenu');
+    if (menu) menu.classList.toggle('open');
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+    const dropdown = document.getElementById('actionDropdown');
+    if (dropdown && !dropdown.contains(e.target)) {
+        document.getElementById('actionMenu')?.classList.remove('open');
+    }
+});
+
+// ==================== Theme Toggle ====================
+function toggleTheme() {
+    const body = document.body;
+    const btn = document.getElementById('themeToggle');
+
+    if (body.classList.contains('light-mode')) {
+        body.classList.remove('light-mode');
+        body.classList.add('dark-mode');
+        if (btn) btn.innerHTML = '<i data-lucide="moon"></i>';
+        localStorage.setItem('theme', 'dark');
+    } else {
+        body.classList.add('light-mode');
+        body.classList.remove('dark-mode');
+        if (btn) btn.innerHTML = '<i data-lucide="sun"></i>';
+        localStorage.setItem('theme', 'light');
+    }
+    if (window.lucide) lucide.createIcons();
+}
+
+// Apply saved theme on load
+(function applyTheme() {
+    const saved = localStorage.getItem('theme');
+    if (saved === 'light') {
+        document.body.classList.add('light-mode');
+    } else if (saved === 'dark') {
+        document.body.classList.add('dark-mode');
+    }
+    // Otherwise let prefers-color-scheme CSS handle it
+})();
+
+// ==================== Animated Tab Indicator ====================
+function updateTabIndicator() {
+    const tabs = document.getElementById('tabs');
+    const indicator = document.getElementById('tabIndicator');
+    if (!tabs || !indicator) return;
+
+    const activeTab = tabs.querySelector('.tab.active');
+    if (!activeTab) return;
+
+    const tabsRect = tabs.getBoundingClientRect();
+    const activeRect = activeTab.getBoundingClientRect();
+
+    indicator.style.width = activeRect.width + 'px';
+    indicator.style.transform = `translateX(${activeRect.left - tabsRect.left}px)`;
+}
+
+// ==================== Compact Scroll Header ====================
+function initScrollHeader() {
+    const header = document.getElementById('header');
+    if (!header) return;
+
+    let ticking = false;
+    window.addEventListener('scroll', () => {
+        if (!ticking) {
+            requestAnimationFrame(() => {
+                header.classList.toggle('scrolled', window.scrollY > 80);
+                ticking = false;
+            });
+            ticking = true;
+        }
+    }, { passive: true });
+}
+
+// ==================== Panel Tab Switcher ====================
+function switchPanelTab(tabName, btn) {
+    document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel-tab-content').forEach(c => c.classList.remove('active'));
+
+    if (btn) btn.classList.add('active');
+    const content = document.getElementById(`panelContent-${tabName}`);
+    if (content) content.classList.add('active');
+}
+
+// ==================== Mobile Bottom Nav ====================
+function updateBottomNav(btn) {
+    document.querySelectorAll('.bottom-nav-item').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+}
+
+// ==================== AI Insight Widget ====================
+function renderAIInsight() {
+    if (!portfolioData || !portfolioData.stocks) return;
+
+    const widget = document.getElementById('aiInsightWidget');
+    const textEl = document.getElementById('aiInsightText');
+    if (!widget || !textEl) return;
+
+    const stocks = portfolioData.stocks.filter(s => s.position.ticker !== 'CASH');
+    if (!stocks.length) return;
+
+    // Generate insight from portfolio data
+    const totalValue = portfolioData.total_value || 0;
+    const totalPnl = portfolioData.total_pnl || 0;
+    const totalPnlPct = portfolioData.total_pnl_percent || 0;
+    const pnlSign = totalPnl >= 0 ? '+' : '';
+
+    // Count ratings
+    const buyCount = stocks.filter(s => s.score?.rating === 'buy').length;
+    const sellCount = stocks.filter(s => s.score?.rating === 'sell').length;
+    const holdCount = stocks.filter(s => s.score?.rating === 'hold').length;
+
+    // Best and worst daily performer
+    const withDaily = stocks.filter(s => s.position.daily_change_pct != null);
+    withDaily.sort((a, b) => (b.position.daily_change_pct || 0) - (a.position.daily_change_pct || 0));
+
+    let insights = [];
+
+    // Portfolio performance summary
+    if (totalPnlPct > 15) {
+        insights.push(`Dein Portfolio steht bei ${pnlSign}${totalPnlPct.toFixed(1)}% Gesamtrendite – starke Performance! 💪`);
+    } else if (totalPnlPct > 0) {
+        insights.push(`Dein Portfolio liegt bei ${pnlSign}${totalPnlPct.toFixed(1)}% im Plus.`);
+    } else {
+        insights.push(`Dein Portfolio steht aktuell bei ${totalPnlPct.toFixed(1)}%.`);
+    }
+
+    // Rating distribution insight
+    if (sellCount > 0) {
+        insights.push(`${sellCount} Position${sellCount > 1 ? 'en' : ''} mit Sell-Rating – Rebalancing prüfen?`);
+    } else if (buyCount >= stocks.length * 0.7) {
+        insights.push(`${buyCount} von ${stocks.length} Positionen haben ein Buy-Rating – gut aufgestellt.`);
+    }
+
+    // Daily movers
+    if (withDaily.length > 0) {
+        const best = withDaily[0];
+        const worst = withDaily[withDaily.length - 1];
+        if (best.position.daily_change_pct > 1) {
+            insights.push(`Tagesgewinner: ${best.position.ticker} mit +${best.position.daily_change_pct.toFixed(1)}%.`);
+        }
+        if (worst.position.daily_change_pct < -1) {
+            insights.push(`${worst.position.ticker} fiel heute ${worst.position.daily_change_pct.toFixed(1)}%.`);
+        }
+    }
+
+    textEl.textContent = insights.join(' ');
+    widget.style.display = 'block';
+}
+
+// ==================== Rebalancing Badge ====================
+function updateRebalancingBadge() {
+    const badge = document.getElementById('rebalancingBadge');
+    if (!badge || !portfolioData || !portfolioData.rebalancing) return;
+
+    const actions = portfolioData.rebalancing.filter(r => r.action && r.action !== 'hold');
+    badge.textContent = actions.length > 0 ? actions.length : '';
+}
+
+// ==================== Animated Portfolio Value ====================
+function animateValue(element, start, end, duration = 800) {
+    if (!element || start === end) return;
+
+    const startTime = performance.now();
+    const diff = end - start;
+
+    function update(currentTime) {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+
+        // Ease out cubic
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const current = start + diff * eased;
+
+        element.textContent = formatCurrency(current);
+
+        if (progress < 1) {
+            requestAnimationFrame(update);
+        }
+    }
+
+    requestAnimationFrame(update);
+}
+

@@ -164,6 +164,15 @@ async def get_portfolio_history(days: int = 90):
 @router.get("/api/portfolio/activities")
 async def get_portfolio_activities():
     """Alle Kauf/Verkauf/Dividenden-Transaktionen von Parqet."""
+    # Demo-Modus
+    summary = portfolio_data.get("summary")
+    if summary and summary.is_demo:
+        activities = portfolio_data.get("activities")
+        if activities:
+            return activities
+        from fetchers.demo_data import get_demo_activities
+        return get_demo_activities()
+
     try:
         from fetchers.parqet import fetch_portfolio_activities_raw
         return await fetch_portfolio_activities_raw()

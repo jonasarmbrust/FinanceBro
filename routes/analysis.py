@@ -56,6 +56,19 @@ async def run_analysis(level: str = "full"):
 @router.get("/api/analysis/latest")
 async def get_latest_analysis():
     """Gibt den letzten Analyse-Report zurück."""
+    # Demo-Modus: Report aus State oder generieren
+    summary = portfolio_data.get("summary")
+    if summary and summary.is_demo:
+        report = portfolio_data.get("last_analysis")
+        if report:
+            return {"status": "ok", "report": report.model_dump()}
+        # Fallback: Analyse-Historie
+        from fetchers.demo_data import get_demo_analysis_history
+        hist = get_demo_analysis_history(days=1)
+        if hist:
+            return {"status": "ok", "report": hist[-1]}
+        return {"status": "no_data", "message": "Noch keine Analyse durchgeführt."}
+
     from engine.analysis import get_analysis_history
 
     history = get_analysis_history(days=7)
@@ -68,6 +81,13 @@ async def get_latest_analysis():
 @router.get("/api/analysis/history")
 async def get_analysis_history_endpoint(days: int = 30):
     """Gibt die Analyse-Historie der letzten X Tage zurück."""
+    # Demo-Modus
+    summary = portfolio_data.get("summary")
+    if summary and summary.is_demo:
+        from fetchers.demo_data import get_demo_analysis_history
+        history = get_demo_analysis_history(days=min(days, 7))
+        return {"status": "ok", "count": len(history), "history": history}
+
     from engine.analysis import get_analysis_history
 
     history = get_analysis_history(days=days)
@@ -222,6 +242,12 @@ async def _run_light_analysis():
 @router.get("/api/backtest")
 async def get_backtest(lookback_days: int = 30, forward_days: int = 14):
     """Score-Backtesting: Misst Prädiktivität der Scoring-Engine."""
+    # Demo-Modus
+    summary = portfolio_data.get("summary")
+    if summary and summary.is_demo:
+        from fetchers.demo_data import get_demo_backtest
+        return get_demo_backtest()
+
     from engine.backtest import run_backtest
     return run_backtest(lookback_days=lookback_days, forward_days=forward_days)
 
@@ -233,10 +259,15 @@ async def get_backtest(lookback_days: int = 30, forward_days: int = 14):
 @router.get("/api/sectors/rotation")
 async def get_sector_rotation():
     """Sektor-Rotation-Analyse: Relative Sektor-Performance vs. S&P 500."""
+    # Demo-Modus
+    summary = portfolio_data.get("summary")
+    if summary and summary.is_demo:
+        from fetchers.demo_data import get_demo_sector_rotation
+        return get_demo_sector_rotation()
+
     from engine.sector_rotation import get_sector_rotation
 
     # Portfolio-Sektoren extrahieren
-    summary = portfolio_data.get("summary")
     portfolio_sectors = None
     if summary and summary.stocks:
         portfolio_sectors = list(set(
