@@ -130,113 +130,56 @@ def _build_telegram_report(
             sections.append(f"  🔴 {stock.position.ticker}: {pct:+.1f}%")
         sections.append("")
 
-    # ── P&L Attribution (Sektor-Beitrag) ──
-    try:
-        from engine.attribution import calculate_attribution
-        attr = calculate_attribution(summary.stocks)
-        if attr["sectors"]:
-            sections.append("🏢 *P&L nach Sektor*")
-            for s in attr["sectors"][:4]:
-                emoji = "🟢" if s["pnl_eur"] >= 0 else "🔴"
+    # ── Watchlist (SELL-Signale - zeitkritisch!) ──
+    if report and report.top_sells:
+        sell_positions = [p for p in report.top_sells if p.rating == Rating.SELL]
+        if sell_positions:
+            sections.append("⚠️ *Watchlist (SELL-Signal)*")
+            for pos in sell_positions[:5]:
                 sections.append(
-                    f"  {emoji} {s['sector']}: {s['pnl_eur']:+,.0f} EUR"
-                )
-            conc = attr["concentration"]
-            sections.append(
-                f"  🎯 Konzentration: {conc['risk_level']} "
-                f"(Top-3 = {conc['top3_pnl_share']:.0f}%)"
-            )
-            sections.append("")
-    except Exception:
-        pass
-
-    # ── Analyse-Report Details ──
-    if report:
-        # Portfolio Score
-        score_emoji = {"buy": "🟢", "hold": "🟡", "sell": "🔴"}[report.portfolio_rating.value]
-        sections.append(f"🎯 *Portfolio Score: {report.portfolio_score:.1f}/100* {score_emoji}")
-        sections.append("")
-
-        # Top Buys
-        if report.top_buys:
-            sections.append("🏆 *Top Performer*")
-            for pos in report.top_buys[:5]:
-                rating_icon = _rating_icon(pos.rating)
-                sections.append(
-                    f"  {rating_icon} {pos.ticker}: {pos.score:.0f}/100"
+                    f"  🔴 {pos.ticker}: {pos.score:.0f}/100"
                     f" ({pos.weight_in_portfolio:.1f}%)"
                 )
             sections.append("")
 
-        # Top Sells / Watchlist
-        if report.top_sells:
-            sell_positions = [p for p in report.top_sells if p.rating == Rating.SELL]
-            if sell_positions:
-                sections.append("⚠️ *Watchlist (SELL-Signal)*")
-                for pos in sell_positions[:5]:
-                    sections.append(
-                        f"  🔴 {pos.ticker}: {pos.score:.0f}/100"
-                        f" ({pos.weight_in_portfolio:.1f}%)"
-                    )
-                sections.append("")
-
-        # Biggest Changes
-        if report.biggest_changes:
-            notable = [p for p in report.biggest_changes if p.score_change and abs(p.score_change) >= 2]
-            if notable:
-                sections.append("📈 *Größte Veränderungen*")
-                for pos in notable[:5]:
-                    arrow = "⬆️" if pos.score_change > 0 else "⬇️"
-                    sections.append(
-                        f"  {arrow} {pos.ticker}: {pos.score_change:+.1f} Punkte"
-                        f" → {pos.score:.0f}/100"
-                    )
-                sections.append("")
-
-        # Data Quality
-        dq = report.data_quality
-        total = dq.get("total", 0)
-        if total > 0:
-            fmp_pct = dq.get("fmp", 0) / total * 100
-            tech_pct = dq.get("technical", 0) / total * 100
-            sections.append(f"📡 *Datenqualität:* FMP {fmp_pct:.0f}% | Technical {tech_pct:.0f}%")
+    # ── Größte Score-Veränderungen ──
+    if report and report.biggest_changes:
+        notable = [p for p in report.biggest_changes if p.score_change and abs(p.score_change) >= 2]
+        if notable:
+            sections.append("📊 *Score-Veränderungen*")
+            for pos in notable[:5]:
+                arrow = "⬆️" if pos.score_change > 0 else "⬇️"
+                sections.append(
+                    f"  {arrow} {pos.ticker}: {pos.score_change:+.1f} → {pos.score:.0f}/100"
+                )
             sections.append("")
 
-    # ── Einzel-Positionen ──
-    sections.append("📋 *Alle Positionen*")
-    stocks_sorted = _sort_stocks_by_score(summary.stocks)
+    # ── Alle Positionen (mit Tagesveränderung) ──
+    sections.append("📋 *Positionen*")
+    stocks_sorted = sorted(
+        [s for s in summary.stocks if s.position.ticker != "CASH"],
+        key=lambda s: s.position.daily_change_pct if s.position.daily_change_pct is not None else 0,
+        reverse=True,
+    )
     for stock in stocks_sorted:
-        if stock.position.ticker == "CASH":
-            continue
-        score_val = stock.score.total_score if stock.score else 0
-        rating_icon = _rating_icon(stock.score.rating) if stock.score else "⚪"
-        pnl_pct = stock.position.pnl_percent
-        pnl_sign = "+" if pnl_pct >= 0 else ""
+        daily = stock.position.daily_change_pct
+        if daily is not None and daily != 0:
+            day_emoji = "🟢" if daily >= 0 else "🔴"
+            day_str = f"{daily:+.1f}%"
+        else:
+            day_emoji = "⚪"
+            day_str = "—"
         sections.append(
-            f"  {rating_icon} {stock.position.ticker}"
-            f" | {score_val:.0f}/100"
-            f" | {pnl_sign}{pnl_pct:.1f}%"
+            f"  {day_emoji} {stock.position.ticker}: {day_str}"
+            f"  ({stock.position.current_price:,.2f} EUR)"
         )
     sections.append("")
 
-    # ── AI Research Insights ──
+    # ── AI Marktkommentar ──
     if ai_insights:
-        sections.append("🤖 *AI Research Insights*")
+        sections.append("🤖 *AI Marktkommentar*")
         sections.append(ai_insights)
         sections.append("")
-
-    # ── Rebalancing ──
-    if summary.rebalancing and summary.rebalancing.actions:
-        actions_buy = [a for a in summary.rebalancing.actions if a.action == "Kaufen"]
-        actions_sell = [a for a in summary.rebalancing.actions if a.action == "Verkaufen"]
-
-        if actions_buy or actions_sell:
-            sections.append("💡 *Rebalancing Empfehlung*")
-            for a in actions_buy[:3]:
-                sections.append(f"  🟢 {a.ticker}: +{a.amount_eur:.0f} EUR ({a.shares_delta:+.2f} Stk)")
-            for a in actions_sell[:3]:
-                sections.append(f"  🔴 {a.ticker}: {a.amount_eur:.0f} EUR ({a.shares_delta:+.2f} Stk)")
-            sections.append("")
 
     # ── Wissen des Tages ──
     try:
@@ -244,7 +187,6 @@ def _build_telegram_report(
         tip = get_daily_tip()
         sections.append(f"🧠 *Wissen des Tages*  _{tip['category']}_")
         sections.append(f"*{tip['title']}*")
-        # Kurzversion für den Daily Report (erste 200 Zeichen des Tipps)
         tip_text = tip["text"].replace("*", "").replace("_", "")
         if len(tip_text) > 200:
             tip_text = tip_text[:200].rsplit(" ", 1)[0] + "..."
@@ -256,7 +198,7 @@ def _build_telegram_report(
 
     # Footer
     sections.append("─" * 30)
-    sections.append("_FinanzBro AI Agent • Automatisch generiert_")
+    sections.append("_FinanzBro AI Agent • Mo-Fr 16:15_")
 
     return "\n".join(sections)
 
@@ -330,13 +272,11 @@ async def _run_gemini_research(
 
     context_lines.append("")
     context_lines.append(
-        "Erstelle eine professionelle Portfolio-Analyse auf Deutsch. Strukturiere so:\n"
-        "1. MARKTUMFELD: Aktuelle Marktlage und Makro-Faktoren (Zinsen, Inflation, Geopolitik)\n"
-        "2. PORTFOLIO-BEWERTUNG: Stärken und Schwächen des Portfolios, Sektor-Konzentration\n"
-        "3. TAGESBEWEGER: Kommentiere kurz die größten Tagesgewinner und -verlierer aus dem Portfolio\n"
-        "4. TOP POSITIONEN: Kommentiere die 2-3 auffälligsten Positionen (beste, schlechteste, größte Veränderung)\n"
-        "5. HANDLUNGSEMPFEHLUNG: 1-2 konkrete, umsetzbare Maßnahmen\n\n"
-        "Halte dich auf max 1400 Zeichen. Kein Markdown, nur Plain Text mit Emojis."
+        "Erstelle einen kurzen täglichen Marktkommentar auf Deutsch. Strukturiere so:\n"
+        "1. MARKTLAGE: 1-2 Sätze zur aktuellen Marktsituation\n"
+        "2. TAGESBEWEGER: Kommentiere kurz die auffälligsten Tagesgewinner/-verlierer aus dem Portfolio\n"
+        "3. HANDLUNGSEMPFEHLUNG: 1 konkrete, umsetzbare Maßnahme\n\n"
+        "Halte dich auf max 600 Zeichen. Kein Markdown, nur Plain Text mit Emojis."
     )
 
     prompt = "\n".join(context_lines)

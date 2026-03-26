@@ -176,9 +176,10 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(
             _refresh_data, "cron",
             hour=16, minute=15,
+            day_of_week="mon-fri",
             id="daily_analysis",
         )
-        logger.info("\U0001f4ca Vollständige Analyse geplant um 16:15 CET")
+        logger.info("\U0001f4ca Vollständige Analyse geplant um 16:15 CET (Mo-Fr)")
 
         # Weekly Digest (Sonntag 18:00 CET)
         async def _run_weekly_digest():

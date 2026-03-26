@@ -127,11 +127,11 @@ class TestBuildTelegramReport:
         assert "MSFT" in text
         assert "INTC" in text
 
-    def test_report_contains_top_buys(self, sample_summary, sample_report):
+    def test_report_contains_positions_with_daily_change(self, sample_summary, sample_report):
         from services.ai_agent import _build_telegram_report
         text = _build_telegram_report(sample_summary, sample_report)
 
-        assert "Top Performer" in text
+        assert "Positionen" in text
 
     def test_report_contains_watchlist(self, sample_summary, sample_report):
         from services.ai_agent import _build_telegram_report
@@ -156,14 +156,14 @@ class TestBuildTelegramReport:
         from services.ai_agent import _build_telegram_report
         text = _build_telegram_report(sample_summary, sample_report, ai_insights="Markt sieht bullish aus")
 
-        assert "AI Research Insights" in text
+        assert "AI Marktkommentar" in text
         assert "bullish" in text
 
     def test_report_without_ai_insights(self, sample_summary, sample_report):
         from services.ai_agent import _build_telegram_report
         text = _build_telegram_report(sample_summary, sample_report, ai_insights="")
 
-        assert "AI Research Insights" not in text
+        assert "AI Marktkommentar" not in text
 
     def test_report_without_analysis_report(self, sample_summary):
         from services.ai_agent import _build_telegram_report
@@ -171,7 +171,7 @@ class TestBuildTelegramReport:
         text = _build_telegram_report(sample_summary, None)
 
         assert "FinanzBro Daily Report" in text
-        assert "Alle Positionen" in text
+        assert "Positionen" in text
 
 
 class TestHelpers:

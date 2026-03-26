@@ -57,12 +57,14 @@ def _build_digest_data(summary, history: list[dict]) -> dict:
     """Berechnet die Kennzahlen für den Wochen-Digest."""
     data = {
         "total_value": summary.total_value,
+        "total_cost": summary.total_cost,
         "total_pnl": summary.total_pnl,
         "total_pnl_pct": summary.total_pnl_percent,
         "num_positions": summary.num_positions,
         "score_changes": [],
         "best_performer": None,
         "worst_performer": None,
+        "summary": summary,
     }
 
     # Score-Veränderungen aus Historie berechnen
@@ -102,7 +104,7 @@ def _build_digest_data(summary, history: list[dict]) -> dict:
 
 
 async def _generate_ai_summary(digest_data: dict) -> str:
-    """Generiert eine KI-Zusammenfassung via Gemini 2.0 Flash."""
+    """Generiert eine KI-Zusammenfassung via Gemini 2.5 Flash."""
     try:
         from services.vertex_ai import get_client
 
@@ -117,9 +119,10 @@ async def _generate_ai_summary(digest_data: dict) -> str:
             changes_text = "\n".join(lines)
 
         prompt = (
-            "Du bist ein Finanzanalyst. Erstelle eine kurze Wochenzusammenfassung "
-            "(3-4 Sätze, max 400 Zeichen) auf Deutsch für folgendes Portfolio:\n\n"
+            "Du bist ein professioneller Finanzanalyst. Erstelle eine Wochenzusammenfassung "
+            "(5-6 Sätze, max 800 Zeichen) auf Deutsch für folgendes Portfolio:\n\n"
             f"Portfoliowert: {digest_data['total_value']:,.0f} EUR\n"
+            f"Einstandskosten: {digest_data.get('total_cost', 0):,.0f} EUR\n"
             f"Gesamt-P&L: {digest_data['total_pnl']:+,.0f} EUR ({digest_data['total_pnl_pct']:+.1f}%)\n"
         )
         if digest_data["best_performer"]:
@@ -129,7 +132,14 @@ async def _generate_ai_summary(digest_data: dict) -> str:
         if changes_text:
             prompt += f"\nScore-Veränderungen:\n{changes_text}\n"
 
-        prompt += "\nFokus auf Trends, Auffälligkeiten und Ausblick. Keine Grüße oder Einleitung."
+        prompt += (
+            "\nStrukturiere so:\n"
+            "1. WOCHENRÜCKBLICK: Was ist diese Woche passiert?\n"
+            "2. STÄRKEN/SCHWÄCHEN: Was läuft gut/schlecht im Portfolio?\n"
+            "3. AUSBLICK: Worauf sollte nächste Woche geachtet werden?\n\n"
+            "Fokus auf Trends, Auffälligkeiten und konkrete Handlungsempfehlungen. "
+            "Kein Markdown, nur Plain Text mit Emojis."
+        )
 
         response = await client.aio.models.generate_content(
             model="gemini-2.5-flash",
@@ -145,10 +155,13 @@ async def _generate_ai_summary(digest_data: dict) -> str:
 
 def _format_digest(data: dict, ai_summary: str) -> str:
     """Formatiert den Wochen-Digest als Telegram-Nachricht."""
+    from models import Rating
+
     lines = [
         "📊 *FinanzBro Wochen-Digest*",
         f"_{datetime.now().strftime('%d.%m.%Y')}_\n",
         f"💰 Portfoliowert: {data['total_value']:,.2f} EUR",
+        f"💵 Einstandskosten: {data.get('total_cost', 0):,.2f} EUR",
         f"📈 Gesamt-P&L: {data['total_pnl']:+,.2f} EUR ({data['total_pnl_pct']:+.1f}%)",
         f"📋 Positionen: {data['num_positions']}",
     ]
@@ -158,6 +171,19 @@ def _format_digest(data: dict, ai_summary: str) -> str:
     if data["worst_performer"]:
         lines.append(f"📉 Schwächster: {data['worst_performer']['ticker']} ({data['worst_performer']['pnl_pct']:+.1f}%)")
 
+    # ── Portfolio Score + Rating (neu, aus Daily übernommen) ──
+    summary = data.get("summary")
+    if summary:
+        try:
+            from state import portfolio_data
+            report = portfolio_data.get("last_analysis")
+            if report:
+                score_emoji = {"buy": "🟢", "hold": "🟡", "sell": "🔴"}.get(report.portfolio_rating.value, "⚪")
+                lines.append(f"\n🎯 *Portfolio Score: {report.portfolio_score:.1f}/100* {score_emoji}")
+        except Exception:
+            pass
+
+    # ── Score-Veränderungen der Woche ──
     if data["score_changes"]:
         lines.append("\n📊 *Score-Veränderungen der Woche:*")
         for c in data["score_changes"][:5]:
@@ -165,7 +191,62 @@ def _format_digest(data: dict, ai_summary: str) -> str:
             emoji = "🟢" if c["change"] > 0 else "🔴"
             lines.append(f"  {emoji} {c['ticker']}: {arrow}{abs(c['change']):.0f} → {c['new_score']:.0f}")
 
+    # ── Sektor-Attribution (neu, aus Daily übernommen) ──
+    if summary:
+        try:
+            from engine.attribution import calculate_attribution
+            attr = calculate_attribution(summary.stocks)
+            if attr["sectors"]:
+                lines.append("\n🏢 *P&L nach Sektor*")
+                for s in attr["sectors"][:5]:
+                    emoji = "🟢" if s["pnl_eur"] >= 0 else "🔴"
+                    lines.append(f"  {emoji} {s['sector']}: {s['pnl_eur']:+,.0f} EUR")
+                conc = attr["concentration"]
+                lines.append(
+                    f"  🎯 Konzentration: {conc['risk_level']} "
+                    f"(Top-3 = {conc['top3_pnl_share']:.0f}%)"
+                )
+        except Exception:
+            pass
+
+    # ── Alle Positionen (Ticker | Score | Rating | P&L%) ──
+    if summary and summary.stocks:
+        lines.append("\n📋 *Alle Positionen*")
+        rating_icons = {Rating.BUY: "🟢", Rating.HOLD: "🟡", Rating.SELL: "🔴"}
+        stocks_sorted = sorted(
+            [s for s in summary.stocks if s.position.ticker != "CASH"],
+            key=lambda s: s.score.total_score if s.score else 0,
+            reverse=True,
+        )
+        for stock in stocks_sorted:
+            score_val = stock.score.total_score if stock.score else 0
+            icon = rating_icons.get(stock.score.rating, "⚪") if stock.score else "⚪"
+            pnl = stock.position.pnl_percent
+            pnl_sign = "+" if pnl >= 0 else ""
+            lines.append(
+                f"  {icon} {stock.position.ticker}"
+                f" | {score_val:.0f}/100"
+                f" | {pnl_sign}{pnl:.1f}%"
+            )
+
+    # ── Rebalancing Empfehlung (neu, aus Daily übernommen) ──
+    if summary and summary.rebalancing and summary.rebalancing.actions:
+        actions_buy = [a for a in summary.rebalancing.actions if a.action == "Kaufen"]
+        actions_sell = [a for a in summary.rebalancing.actions if a.action == "Verkaufen"]
+        if actions_buy or actions_sell:
+            lines.append("\n💡 *Rebalancing Empfehlung*")
+            for a in actions_buy[:3]:
+                lines.append(f"  🟢 {a.ticker}: +{a.amount_eur:.0f} EUR ({a.shares_delta:+.2f} Stk)")
+            for a in actions_sell[:3]:
+                lines.append(f"  🔴 {a.ticker}: {a.amount_eur:.0f} EUR ({a.shares_delta:+.2f} Stk)")
+
+    # ── KI-Einschätzung ──
     if ai_summary:
-        lines.append(f"\n🤖 *KI-Einschätzung:*\n{ai_summary}")
+        lines.append(f"\n🤖 *KI-Wochenanalyse:*\n{ai_summary}")
+
+    # Footer
+    lines.append("\n" + "─" * 30)
+    lines.append("_FinanzBro Weekly Digest • Freitag 22:30_")
 
     return "\n".join(lines)
+
