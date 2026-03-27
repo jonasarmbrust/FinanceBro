@@ -1,7 +1,42 @@
 # 📊 FinanzBro – Intelligentes Portfolio Dashboard
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB.svg?logo=python&logoColor=white)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![Gemini AI](https://img.shields.io/badge/Gemini_AI-2.5_Pro-4285F4.svg?logo=google&logoColor=white)](https://ai.google.dev)
+[![Cloud Run](https://img.shields.io/badge/Cloud_Run-Deployed-4285F4.svg?logo=googlecloud&logoColor=white)](https://cloud.google.com/run)
+
 Echtzeit-Portfolio-Dashboard mit Multi-Faktor-Scoring, Conviction-basiertem Rebalancing, AI Trade Advisor (Function Calling + Chat), Gemini Structured Output und yFinance-basiertem Stock Screener.  
 Läuft lokal und auf **Google Cloud Run** (min. 1GB RAM empfohlen).
+
+![FinanzBro Dashboard](docs/screenshots/dashboard-overview.png)
+
+## Screenshots
+
+<table>
+  <tr>
+    <td><img src="docs/screenshots/portfolio-table.png" alt="Portfolio" width="500"/><br/><em>Portfolio-Positionen mit Scoring</em></td>
+    <td><img src="docs/screenshots/stock-detail.png" alt="Stock Detail" width="250"/><br/><em>Aktien-Detail mit Score-Breakdown</em></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/analyse-tab.png" alt="Analyse" width="500"/><br/><em>Analyse: Sektoren, Risiko, Benchmark, Dividenden</em></td>
+    <td><img src="docs/screenshots/rebalancing.png" alt="Rebalancing" width="500"/><br/><em>Conviction-basiertes Rebalancing</em></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/tech-picks.png" alt="Tech Picks" width="500"/><br/><em>AI-gestützte Tech-Empfehlungen</em></td>
+    <td><img src="docs/screenshots/ai-advisor.png" alt="AI Advisor" width="500"/><br/><em>AI Trade Advisor (Gemini 2.5 Pro)</em></td>
+  </tr>
+</table>
+
+### 🤖 Telegram Bot
+
+<table>
+  <tr>
+    <td><img src="docs/screenshots/telegram-daily.jpg" alt="Daily Report" width="280"/><br/><em>Täglicher AI Report</em></td>
+    <td><img src="docs/screenshots/telegram-weekly.jpg" alt="Weekly Digest" width="280"/><br/><em>Wochenrückblick</em></td>
+    <td><img src="docs/screenshots/telegram-news.jpg" alt="News Alert" width="280"/><br/><em>Proaktive News-Alerts</em></td>
+  </tr>
+</table>
 
 ## Architektur
 

@@ -560,12 +560,7 @@ async def get_portfolio_history_detail(period: str = "6month"):
     }
     days = period_map.get(period, 180)
 
-    cache_key = f"history_detail_{period}"
-    cached = _get_cached(cache_key)
-    if cached is not None:
-        return cached
-
-    # Demo-Modus: Synthetische Verlaufsdaten
+    # Demo-Modus: Synthetische Verlaufsdaten (VOR Cache-Check!)
     summary = portfolio_data.get("summary")
     if summary and summary.is_demo:
         from fetchers.demo_data import get_demo_portfolio_history
@@ -578,6 +573,11 @@ async def get_portfolio_history_detail(period: str = "6month"):
             "positions": {},
             "is_demo": True,
         }
+
+    cache_key = f"history_detail_{period}"
+    cached = _get_cached(cache_key)
+    if cached is not None:
+        return cached
 
     # Activities laden
     activities = portfolio_data.get("activities")

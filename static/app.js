@@ -60,26 +60,30 @@ function renderDashboard() {
 
     // Batch all DOM mutations in a single animation frame to prevent flicker
     requestAnimationFrame(() => {
-        renderHeader();
-        renderStats();
-        renderMarketIndices();
-        renderMovers();
-        renderHeatmap();
-        renderTable();
-        renderRebalancing();
-        renderTechPicks();
-        renderAIInsight();
-        updateRebalancingBadge();
+        try {
+            renderHeader();
+            renderStats();
+            renderMarketIndices();
+            renderMovers();
+            renderHeatmap();
+            renderTable();
+            renderRebalancing();
+            renderTechPicks();
+            renderAIInsight();
+            updateRebalancingBadge();
 
-        // Lazy-load Analyse tab data if visible
-        const analyseTab = document.getElementById('tab-analyse');
-        if (analyseTab && analyseTab.classList.contains('active')) {
-            renderAnalyseTab();
+            // Lazy-load Analyse tab data if visible
+            const analyseTab = document.getElementById('tab-analyse');
+            if (analyseTab && analyseTab.classList.contains('active')) {
+                renderAnalyseTab();
+            }
+        } catch (err) {
+            console.error('renderDashboard Fehler:', err);
+        } finally {
+            showSkeleton(false);
+            // Re-create Lucide icons for dynamically added content
+            if (window.lucide) lucide.createIcons();
         }
-
-        showSkeleton(false);
-        // Re-create Lucide icons for dynamically added content
-        if (window.lucide) lucide.createIcons();
     });
 }
 
