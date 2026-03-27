@@ -109,11 +109,13 @@ Alle JSON-AI-Services nutzen `response_schema` — Gemini garantiert valides JSO
 | GET | `/` | Dashboard (HTML) |
 | GET | `/api/portfolio` | Portfolio-Daten (JSON) |
 | GET | `/api/stock/{ticker}` | Einzelaktie Details |
+| GET | `/api/stock/{ticker}/history` | Kurs-History einer Einzelaktie |
 | GET | `/api/portfolio/history` | Portfolio-Wert-Entwicklung |
+| GET | `/api/portfolio/activities` | Kauf-/Verkaufs-Aktivitäten |
 | GET | `/api/rebalancing` | Rebalancing-Empfehlungen |
 | GET | `/api/tech-picks` | Tech-Aktien Screening (yFinance Screener) |
+| GET | `/api/sectors` | Sektor-Allokation |
 | GET | `/api/fear-greed` | Fear & Greed Index |
-| GET | `/api/earnings-calendar` | Earnings-Kalender (Portfolio-Positionen) |
 | GET | `/api/status` | System-Status |
 
 ### Demo Mode (`routes/demo.py`)
@@ -128,13 +130,22 @@ Alle JSON-AI-Services nutzen `response_schema` — Gemini garantiert valides JSO
 |---|---|---|
 | POST | `/api/refresh` | Kompletter Refresh |
 | POST | `/api/refresh/prices` | Nur Kurse updaten |
+| POST | `/api/refresh/portfolio` | Nur Portfolio-Positionen updaten |
 | POST | `/api/refresh/parqet` | Nur Parqet-Positionen |
 | POST | `/api/refresh/scores` | Nur Scores neuberechnen |
+| POST | `/api/trigger-report` | AI-Report manuell auslösen |
+| POST | `/api/trigger-weekly-digest` | Weekly Digest manuell auslösen |
 | GET | `/api/refresh/status` | Refresh-Fortschritt |
 
-### AI Advisor (`routes/analysis.py`)
+### AI Advisor & Analysis (`routes/analysis.py`)
 | Methode | Pfad | Beschreibung |
 |---|---|---|
+| POST | `/api/analysis/run` | Analyse starten |
+| GET | `/api/analysis/latest` | Letzte Analyse abrufen |
+| GET | `/api/analysis/history` | Analyse-Historie |
+| GET | `/api/analysis/trend/{ticker}` | Score-Trend einer Aktie |
+| GET | `/api/backtest` | Score-Backtest |
+| GET | `/api/sectors/rotation` | Sektor-Rotation-Analyse |
 | POST | `/api/advisor/evaluate` | Trade-Bewertung (Kauf/Verkauf/Aufstocken) |
 | POST | `/api/advisor/chat` | Freie Portfolio-Diskussion (Multi-Turn) |
 
@@ -147,8 +158,13 @@ Alle JSON-AI-Services nutzen `response_schema` — Gemini garantiert valides JSO
 | GET | `/api/dividends` | Dividenden-Übersicht |
 | GET | `/api/benchmark` | Benchmark-Vergleich |
 | GET | `/api/correlation` | Korrelationsmatrix |
+| GET | `/api/earnings-calendar` | Earnings-Kalender (Portfolio-Positionen) |
+| GET | `/api/stock/{ticker}/news` | Aktien-News |
 | GET | `/api/risk` | Beta, VaR, Max Drawdown |
+| GET | `/api/stock/{ticker}/score-history` | Score-Entwicklung einer Aktie |
 | GET | `/api/attribution` | P&L Attribution |
+| GET | `/api/portfolio/history-detail` | Detaillierte Portfolio-Historie (Einzelaktien) |
+| GET | `/api/performance` | Performance-Kennzahlen |
 
 ## Persistenz
 
@@ -238,6 +254,7 @@ FinanzBro/
 │   ├── analytics.py     # Korrelation, Risiko, Dividenden
 │   ├── rebalancer.py    # Rebalancing-Empfehlungen
 │   ├── attribution.py   # P&L Attribution + Herfindahl-Index
+│   ├── portfolio_history.py # Portfolio-Historie (Einzelaktien, Cash, Cost-Basis)
 │   ├── history.py       # Portfolio-Snapshots → SQLite
 │   ├── backtest.py      # Score-Backtest Engine
 │   └── sector_rotation.py # Sektor-Rotation-Analyse (ETF-basiert)
@@ -267,6 +284,8 @@ FinanzBro/
 │   ├── news_kurator.py  # Proaktive Portfolio-News-Alerts (Structured Output)
 │   ├── tech_radar_ai.py # Tech-Empfehlungen (AI)
 │   ├── analyst_tracker.py   # Analysten Track Record
+│   ├── knowledge_data.py    # Wissens-Datenbank (Projekt-Fakten + tägliche Tipps)
+│   ├── url_fetcher.py       # URL Content Fetcher (HTML→Text für AI Tools)
 │   └── currency_converter.py
 ├── routes/
 │   ├── portfolio.py     # Portfolio + Dashboard
@@ -281,5 +300,5 @@ FinanzBro/
 │   ├── index.html       # Dashboard UI
 │   ├── app.js           # Frontend-Logic
 │   └── styles.css       # Styling
-└── tests/               # 367+ pytest Tests
+└── tests/               # 368+ pytest Tests (21 Testdateien)
 ```

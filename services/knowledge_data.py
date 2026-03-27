@@ -60,7 +60,7 @@ PROJECT_KNOWLEDGE: dict[str, dict] = {
             "Python", "FastAPI", "Uvicorn", "Pydantic",
             "httpx", "pandas", "APScheduler",
             "Parqet API (OAuth2)", "FMP API", "yfinance",
-            "Finnhub WebSocket", "Google Gemini API",
+            "yFinance WebSocket", "Google Gemini API",
             "Telegram Bot API", "Docker", "Google Cloud Run",
             "pytest", "HTML/JS/CSS Frontend",
         ],
@@ -276,7 +276,7 @@ DAILY_TIPS: list[dict] = [
             "🌐 *WebSocket Streaming*\n\n"
             "Polling: Alle 5s fragen 'Hat sich was geändert?' → 240 Anfragen/Minute bei 20 Aktien.\n"
             "WebSocket: 1 offene Verbindung, Updates kommen automatisch sofort.\n\n"
-            "📂 FinanzBro nutzt Finnhub WebSocket für Live-Kurse."
+            "📂 FinanzBro nutzt yFinance WebSocket für Live-Kurse."
         ),
     },
     {

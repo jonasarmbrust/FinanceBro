@@ -40,7 +40,9 @@ FinanzBro/
 │   ├── weekly_digest.py    # Wöchentlicher Digest (Flash)
 │   ├── tech_radar_ai.py    # AI-gestützte Tech-Empfehlungen
 │   ├── trade_advisor.py    # AI Trade Advisor (Function Calling + Structured Output + Chat)
-│   └── analyst_tracker.py  # Analysten Track Record Bewertung
+│   ├── analyst_tracker.py  # Analysten Track Record Bewertung
+│   ├── knowledge_data.py   # Wissens-Datenbank (Projekt-Fakten + tägliche Tipps)
+│   └── url_fetcher.py      # URL Content Fetcher (HTML→Text für AI Tools)
 │
 ├── engine/
 │   ├── scorer.py           # 10-Faktor Scoring Engine v5
@@ -48,6 +50,7 @@ FinanzBro/
 │   ├── analysis.py         # Analyse-Reports → SQLite
 │   ├── analytics.py        # Korrelation, Risiko, Dividenden
 │   ├── attribution.py      # P&L Attribution (Sektor, Herfindahl-Index)
+│   ├── portfolio_history.py # Portfolio-Historie (Einzelaktien, Cash, Cost-Basis)
 │   ├── history.py          # Portfolio-Snapshots → SQLite
 │   ├── backtest.py         # Score-Backtest Engine
 │   └── sector_rotation.py  # Sektor-Rotation-Analyse (ETF-basiert)
@@ -57,7 +60,6 @@ FinanzBro/
 │   ├── parqet_auth.py      # OAuth2 Token-Management (PKCE, Refresh)
 │   ├── fmp.py              # Financial Modeling Prep API
 │   ├── yfinance_data.py    # yFinance v1.2.0 (Recs, Insider, ESG, Altman Z, Piotroski, Earnings, Fundamentals)
-│   ├── finnhub_ws.py       # Finnhub WebSocket (Echtzeit US)
 │   ├── yfinance_ws.py      # yFinance WebSocket (Echtzeit International)
 │   ├── technical.py        # RSI, SMA, MACD Berechnung
 │   ├── fear_greed.py       # CNN Fear & Greed Index
@@ -72,7 +74,7 @@ FinanzBro/
 │   ├── index.html          # Modular HTML: Header, Tabs, Slide-Over, Bottom Nav
 │   ├── app.js              # ~3100 LOC: Rendering, SSE, Theme, Toast, Heatmap
 │   └── styles.css          # ~3660 LOC: Design System, Dark/Light Mode, Glassmorphism
-└── tests/                  # 367+ pytest Tests
+└── tests/                  # 368+ pytest Tests (21 Testdateien)
 ```
 
 ## Frontend-Architektur
