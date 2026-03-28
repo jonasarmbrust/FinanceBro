@@ -611,19 +611,19 @@ async function openStockDetail(ticker) {
     if (score?.breakdown) {
         const bd = score.breakdown;
         const items = [
-            { label: 'Qualität', value: bd.quality_score || bd.fundamental_score || 0, weight: '20%' },
-            { label: 'Bewertung', value: bd.valuation_score || 0, weight: '15%' },
-            { label: 'Analysten', value: bd.analyst_score || 0, weight: '15%' },
-            { label: 'Technisch', value: bd.technical_score || 0, weight: '15%' },
-            { label: 'Wachstum', value: bd.growth_score || 0, weight: '12%' },
-            { label: 'Quantitativ', value: bd.quantitative_score || 0, weight: '10%' },
+            { label: t('quality'), value: bd.quality_score || bd.fundamental_score || 0, weight: '20%' },
+            { label: currentLang === 'de' ? 'Bewertung' : 'Valuation', value: bd.valuation_score || 0, weight: '15%' },
+            { label: currentLang === 'de' ? 'Analysten' : 'Analysts', value: bd.analyst_score || 0, weight: '15%' },
+            { label: t('technical'), value: bd.technical_score || 0, weight: '15%' },
+            { label: currentLang === 'de' ? 'Wachstum' : 'Growth', value: bd.growth_score || 0, weight: '12%' },
+            { label: currentLang === 'de' ? 'Quantitativ' : 'Quantitative', value: bd.quantitative_score || 0, weight: '10%' },
             { label: 'Sentiment', value: bd.sentiment_score || 0, weight: '8%' },
             { label: 'Insider', value: bd.insider_score || 0, weight: '3%' },
             { label: 'ESG', value: bd.esg_score || 0, weight: '2%' },
         ];
         overviewHTML += `
             <div class="modal-section">
-                <div class="modal-section-title">Score-Aufschlüsselung</div>
+                <div class="modal-section-title">${t('scoreBreakdown')}</div>
                 <div class="modal-breakdown">
                     ${items.map(it => {
                         const color = it.value >= 70 ? '#22c55e' : it.value >= 40 ? '#eab308' : '#ef4444';
@@ -746,18 +746,18 @@ async function openStockDetail(ticker) {
     const yf = stock.yfinance;
     if (yf && (yf.recommendation_trend || yf.esg_risk_score != null || yf.insider_buy_count > 0 || yf.insider_sell_count > 0)) {
         const insiderTotal = (yf.insider_buy_count || 0) + (yf.insider_sell_count || 0);
-        const insiderRatio = insiderTotal > 0 ? ((yf.insider_buy_count / insiderTotal) * 100).toFixed(0) + '% Käufe' : null;
+        const insiderRatio = insiderTotal > 0 ? ((yf.insider_buy_count / insiderTotal) * 100).toFixed(0) + '% ' + t('insiderBuysPct') : null;
         const esgLabel = yf.esg_risk_score != null ?
-            (yf.esg_risk_score <= 10 ? '🟢 Niedrig' : yf.esg_risk_score <= 20 ? '🟢 Gering' :
-                yf.esg_risk_score <= 30 ? '🟡 Mittel' : yf.esg_risk_score <= 40 ? '🟠 Hoch' : '🔴 Sehr hoch') : null;
+            (yf.esg_risk_score <= 10 ? '🟢 Low' : yf.esg_risk_score <= 20 ? '🟢 Low' :
+                yf.esg_risk_score <= 30 ? '🟡 Medium' : yf.esg_risk_score <= 40 ? '🟠 High' : '🔴 Very High') : null;
         fundHTML += `
             <div class="modal-section">
                 <div class="modal-section-title">Yahoo Finance</div>
                 <div class="modal-metrics">
-                    ${metricItem('Empfehlung', yf.recommendation_trend)}
-                    ${metricItem('ESG Risiko', yf.esg_risk_score != null ? yf.esg_risk_score.toFixed(1) + ' (' + esgLabel + ')' : null)}
-                    ${metricItem('Insider Käufe', yf.insider_buy_count || 0)}
-                    ${metricItem('Insider Verkäufe', yf.insider_sell_count || 0)}
+                    ${metricItem(currentLang === 'de' ? 'Empfehlung' : 'Recommendation', yf.recommendation_trend)}
+                    ${metricItem('ESG Risk', yf.esg_risk_score != null ? yf.esg_risk_score.toFixed(1) + ' (' + esgLabel + ')' : null)}
+                    ${metricItem(t('insiderBuys'), yf.insider_buy_count || 0)}
+                    ${metricItem(t('insiderSells'), yf.insider_sell_count || 0)}
                     ${metricItem('Insider Ratio', insiderRatio)}
                     ${metricItem('Earnings YoY', yf.earnings_growth_yoy != null ? (yf.earnings_growth_yoy > 0 ? '+' : '') + yf.earnings_growth_yoy.toFixed(1) + '%' : null)}
                 </div>
@@ -772,7 +772,7 @@ async function openStockDetail(ticker) {
                 <div class="modal-section-title">💰 Dividende</div>
                 <div class="modal-metrics">
                     ${metricItem('Rendite', div.yield_percent != null ? div.yield_percent.toFixed(2) + '%' : null)}
-                    ${metricItem('Jährlich/Aktie', div.annual_dividend != null ? formatCurrency(toDisplay(div.annual_dividend)) : null)}
+                    ${metricItem(t('annualPerShare'), div.annual_dividend != null ? formatCurrency(toDisplay(div.annual_dividend)) : null)}
                     ${metricItem('Ex-Datum', div.ex_date)}
                     ${metricItem('Frequenz', div.frequency)}
                 </div>
@@ -786,7 +786,7 @@ async function openStockDetail(ticker) {
     if (tech && (tech.rsi_14 != null || tech.sma_cross || tech.momentum_30d != null)) {
         const signalEmoji = tech.signal === 'Bullish' ? '📈' : tech.signal === 'Bearish' ? '📉' : '➡️';
         const rsiLabel = tech.rsi_14 != null ?
-            (tech.rsi_14 > 70 ? '⚠️ Überkauft' : tech.rsi_14 < 30 ? '⚠️ Überverkauft' : '✅ Normal') : null;
+            (tech.rsi_14 > 70 ? t('overbought') : tech.rsi_14 < 30 ? t('oversold') : t('normal')) : null;
         const crossLabel = tech.sma_cross === 'golden' ? '🟢 Golden Cross' : tech.sma_cross === 'death' ? '🔴 Death Cross' : '➡️ Neutral';
         techHTML += `
             <div class="modal-section">
@@ -808,7 +808,7 @@ async function openStockDetail(ticker) {
         const sentimentLabel = av.news_sentiment != null ?
             (av.news_sentiment > 0.15 ? '📈 Positiv' : av.news_sentiment < -0.15 ? '📉 Negativ' : '➡️ Neutral') : null;
         const avRsiLabel = av.rsi_14 != null ?
-            (av.rsi_14 > 70 ? '⚠️ Überkauft' : av.rsi_14 < 30 ? '⚠️ Überverkauft' : '✅ Normal') : null;
+            (av.rsi_14 > 70 ? t('overbought') : av.rsi_14 < 30 ? t('oversold') : t('normal')) : null;
         techHTML += `
             <div class="modal-section">
                 <div class="modal-section-title">Alpha Vantage</div>
@@ -820,14 +820,14 @@ async function openStockDetail(ticker) {
             </div>
         `;
     }
-    if (!techHTML) techHTML = '<div class="empty-state">Keine technischen Daten verfügbar</div>';
+    if (!techHTML) techHTML = '<div class="empty-state">' + t('noTechData') + '</div>';
 
     // News tab
     let newsHTML = '<div id="stockNewsContainer"><div class="loading-text">News werden geladen...</div></div>';
 
     // Write to panel tabs
     document.getElementById('panelContent-overview').innerHTML = overviewHTML;
-    document.getElementById('panelContent-fundamentals').innerHTML = fundHTML || '<div class="empty-state">Keine Fundamentaldaten verfügbar</div>';
+    document.getElementById('panelContent-fundamentals').innerHTML = fundHTML || '<div class="empty-state">' + t('noFundData') + '</div>';
     document.getElementById('panelContent-technical').innerHTML = techHTML;
     document.getElementById('panelContent-news').innerHTML = newsHTML;
 
@@ -1039,7 +1039,7 @@ function updateDemoUI() {
             ? '<span class="refresh-icon">🔄</span> Live-Daten'
             : '<span class="refresh-icon">🎭</span> Demo';
         btn.title = isDemo
-            ? 'Zurück zu echten Portfolio-Daten'
+            ? t('switchToReal')
             : 'Demo-Portfolio mit fiktiven Daten laden';
         btn.classList.toggle('demo-active', isDemo);
     }
@@ -1144,7 +1144,7 @@ async function _doRefresh(btnId, endpoint) {
 
         // Show status message
         const lastUpdate = document.getElementById('lastUpdate');
-        lastUpdate.textContent = result.message || '🔬 Komplette Analyse läuft...';
+        lastUpdate.textContent = result.message || t('fullAnalysisRunning');
 
         // Poll for completion
         let attempts = 0;
@@ -1496,11 +1496,11 @@ async function renderRisk() {
                     <span class="risk-metric-value">${data.portfolio_beta}</span>
                 </div>
                 <div class="risk-metric">
-                    <span class="risk-metric-label">Volatilität (p.a.)</span>
+                    <span class="risk-metric-label">${t('volatilityPa')}</span>
                     <span class="risk-metric-value">${data.volatility_annual}%</span>
                 </div>
                 <div class="risk-metric">
-                    <span class="risk-metric-label">VaR 95% (täglich)</span>
+                    <span class="risk-metric-label">${t('varDaily')}</span>
                     <span class="risk-metric-value" style="color:#ef4444">-${data.var_95_daily}%</span>
                 </div>
                 <div class="risk-metric">
@@ -1592,7 +1592,7 @@ async function renderDividends() {
         container.innerHTML = `
             <div class="dividend-summary">
                 <div class="dividend-stat">
-                    <span class="dividend-stat-label">Jährliche Einnahmen</span>
+                    <span class="dividend-stat-label">${t('annualIncome')}</span>
                     <span class="dividend-stat-value">${formatCurrency(data.total_annual_income)}</span>
                 </div>
                 <div class="dividend-stat">
@@ -1629,7 +1629,7 @@ async function renderCorrelation() {
         const container = document.getElementById('correlationContainer');
 
         if (!data.matrix?.length || !data.tickers?.length) {
-            container.innerHTML = '<div class="empty-state">Berechnung läuft... (benötigt Preisdaten)</div>';
+            container.innerHTML = '<div class="empty-state">' + t('calcRunning') + '</div>';
             return;
         }
 
@@ -1759,7 +1759,7 @@ async function loadStockNews(ticker) {
         if (!container) return;
 
         const res = await fetch(`/api/stock/${ticker}/news?limit=5`);
-        if (!res.ok) { container.innerHTML = '<div class="empty-state">News nicht verfügbar</div>'; return; }
+        if (!res.ok) { container.innerHTML = '<div class="empty-state">' + t('newsUnavailable') + '</div>'; return; }
         const data = await res.json();
 
         if (!data.length) {
@@ -1778,7 +1778,7 @@ async function loadStockNews(ticker) {
         `).join('');
     } catch (e) {
         const container = document.getElementById('stockNewsContainer');
-        if (container) container.innerHTML = '<div class="empty-state">News nicht verfügbar</div>';
+        if (container) container.innerHTML = '<div class="empty-state">' + t('newsUnavailable') + '</div>';
     }
 }
 
@@ -2229,13 +2229,13 @@ function clearAdvisorChat() {
     const messagesDiv = document.getElementById('advisorChatMessages');
     messagesDiv.innerHTML = `
         <div class="advisor-chat-welcome">
-            <p>👋 Hallo! Ich bin dein Portfolio-Berater.</p>
-            <p>Du kannst mich alles zu deinem Portfolio fragen. Beispiele:</p>
+            <p>${t('chatWelcome1')}</p>
+            <p>${t('chatWelcome2')}</p>
             <div class="advisor-chat-suggestions">
-                <button class="advisor-chat-suggestion" onclick="sendChatSuggestion(this)">Wie diversifiziert ist mein Portfolio?</button>
-                <button class="advisor-chat-suggestion" onclick="sendChatSuggestion(this)">Was passiert wenn der USD 10% fällt?</button>
-                <button class="advisor-chat-suggestion" onclick="sendChatSuggestion(this)">Welche Aktie hat das beste Chance/Risiko-Verhältnis?</button>
-                <button class="advisor-chat-suggestion" onclick="sendChatSuggestion(this)">Wie hoch ist mein Klumpenrisiko im Tech-Sektor?</button>
+                <button class="advisor-chat-suggestion" onclick="sendChatSuggestion(this)">${t('chatSuggestion1')}</button>
+                <button class="advisor-chat-suggestion" onclick="sendChatSuggestion(this)">${t('chatSuggestion2')}</button>
+                <button class="advisor-chat-suggestion" onclick="sendChatSuggestion(this)">${t('chatSuggestion3')}</button>
+                <button class="advisor-chat-suggestion" onclick="sendChatSuggestion(this)">${t('chatSuggestion4')}</button>
             </div>
         </div>`;
 }
@@ -2545,7 +2545,7 @@ async function loadHistorie(period, btn) {
             if (loadingEl) loadingEl.style.display = 'none';
             if (canvasEl) canvasEl.style.opacity = '1';
             const summaryEl = document.getElementById('historieSummary');
-            if (summaryEl) summaryEl.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:2rem;">Keine historischen Daten verfügbar. Bitte zuerst ein Parqet-Update durchführen.</p>';
+            if (summaryEl) summaryEl.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:2rem;">' + t('noHistoryData') + '</p>';
             return;
         }
         renderHistorieChart(data);
@@ -3033,18 +3033,28 @@ function renderAIInsight() {
 
     // Portfolio performance summary
     if (totalPnlPct > 15) {
-        insights.push(`Dein Portfolio steht bei ${pnlSign}${totalPnlPct.toFixed(1)}% Gesamtrendite – starke Performance! 💪`);
+        insights.push(currentLang === 'de'
+            ? `Dein Portfolio steht bei ${pnlSign}${totalPnlPct.toFixed(1)}% Gesamtrendite – starke Performance! 💪`
+            : `Your portfolio is at ${pnlSign}${totalPnlPct.toFixed(1)}% total return – strong performance! 💪`);
     } else if (totalPnlPct > 0) {
-        insights.push(`Dein Portfolio liegt bei ${pnlSign}${totalPnlPct.toFixed(1)}% im Plus.`);
+        insights.push(currentLang === 'de'
+            ? `Dein Portfolio liegt bei ${pnlSign}${totalPnlPct.toFixed(1)}% im Plus.`
+            : `Your portfolio is up ${pnlSign}${totalPnlPct.toFixed(1)}%.`);
     } else {
-        insights.push(`Dein Portfolio steht aktuell bei ${totalPnlPct.toFixed(1)}%.`);
+        insights.push(currentLang === 'de'
+            ? `Dein Portfolio steht aktuell bei ${totalPnlPct.toFixed(1)}%.`
+            : `Your portfolio is currently at ${totalPnlPct.toFixed(1)}%.`);
     }
 
     // Rating distribution insight
     if (sellCount > 0) {
-        insights.push(`${sellCount} Position${sellCount > 1 ? 'en' : ''} mit Sell-Rating – Rebalancing prüfen?`);
+        insights.push(currentLang === 'de'
+            ? `${sellCount} Position${sellCount > 1 ? 'en' : ''} mit Sell-Rating – Rebalancing prüfen?`
+            : `${sellCount} ${sellCount > 1 ? t('positionPlural') : t('position')} ${t('sellRatingHint')}`);
     } else if (buyCount >= stocks.length * 0.7) {
-        insights.push(`${buyCount} von ${stocks.length} Positionen haben ein Buy-Rating – gut aufgestellt.`);
+        insights.push(currentLang === 'de'
+            ? `${buyCount} von ${stocks.length} Positionen haben ein Buy-Rating – gut aufgestellt.`
+            : `${buyCount} of ${stocks.length} positions have a Buy rating – well positioned.`);
     }
 
     // Daily movers
@@ -3052,10 +3062,14 @@ function renderAIInsight() {
         const best = withDaily[0];
         const worst = withDaily[withDaily.length - 1];
         if (best.position.daily_change_pct > 1) {
-            insights.push(`Tagesgewinner: ${best.position.ticker} mit +${best.position.daily_change_pct.toFixed(1)}%.`);
+            insights.push(currentLang === 'de'
+                ? `Tagesgewinner: ${best.position.ticker} mit +${best.position.daily_change_pct.toFixed(1)}%.`
+                : `Top gainer: ${best.position.ticker} at +${best.position.daily_change_pct.toFixed(1)}%.`);
         }
         if (worst.position.daily_change_pct < -1) {
-            insights.push(`${worst.position.ticker} fiel heute ${worst.position.daily_change_pct.toFixed(1)}%.`);
+            insights.push(currentLang === 'de'
+                ? `${worst.position.ticker} fiel heute ${worst.position.daily_change_pct.toFixed(1)}%.`
+                : `${worst.position.ticker} dropped ${worst.position.daily_change_pct.toFixed(1)}% today.`);
         }
     }
 
@@ -3097,3 +3111,104 @@ function animateValue(element, start, end, duration = 800) {
     requestAnimationFrame(update);
 }
 
+// ==================== CSV Upload ====================
+let csvParsedData = null;
+
+function showCsvUpload() {
+    document.getElementById('csvUploadOverlay').style.display = 'block';
+    document.getElementById('csvUploadModal').style.display = 'block';
+    if (window.lucide) lucide.createIcons();
+    // Close action menu
+    const menu = document.getElementById('actionMenu');
+    if (menu) menu.classList.remove('show');
+
+    // Setup drop zone click
+    const dropZone = document.getElementById('csvDropZone');
+    dropZone.onclick = () => document.getElementById('csvFileInput').click();
+}
+
+function closeCsvUpload() {
+    document.getElementById('csvUploadOverlay').style.display = 'none';
+    document.getElementById('csvUploadModal').style.display = 'none';
+    csvParsedData = null;
+}
+
+function handleCsvFile(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const text = e.target.result;
+        const lines = text.trim().split('\n');
+        if (lines.length < 2) {
+            showToast(t('csvError') + ': Empty file', 'error');
+            return;
+        }
+
+        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+        const rows = [];
+        for (let i = 1; i < lines.length; i++) {
+            const vals = lines[i].split(',').map(v => v.trim());
+            if (vals.length < 3) continue;
+            const row = {};
+            headers.forEach((h, idx) => row[h] = vals[idx] || '');
+            rows.push(row);
+        }
+
+        csvParsedData = rows;
+
+        // Show preview
+        const preview = document.getElementById('csvPreview');
+        preview.style.display = 'block';
+        preview.innerHTML = `
+            <table class="portfolio-table" style="font-size:0.8rem;">
+                <thead><tr>
+                    <th>Ticker</th><th>Shares</th><th>Buy Price</th><th>Currency</th>
+                </tr></thead>
+                <tbody>
+                    ${rows.slice(0, 10).map(r => `
+                        <tr>
+                            <td><strong>${r.ticker || ''}</strong></td>
+                            <td>${r.shares || ''}</td>
+                            <td>${r.buy_price || ''}</td>
+                            <td>${r.currency || 'USD'}</td>
+                        </tr>
+                    `).join('')}
+                    ${rows.length > 10 ? `<tr><td colspan="4" style="text-align:center;color:var(--text-muted)">... +${rows.length - 10} more</td></tr>` : ''}
+                </tbody>
+            </table>
+        `;
+
+        document.getElementById('csvImportBtn').style.display = 'block';
+    };
+    reader.readAsText(file);
+}
+
+async function importCsvPortfolio() {
+    if (!csvParsedData || !csvParsedData.length) return;
+
+    const btn = document.getElementById('csvImportBtn');
+    btn.disabled = true;
+    btn.textContent = t('csvImporting');
+
+    try {
+        const res = await fetch('/api/portfolio/upload-csv', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ positions: csvParsedData })
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const result = await res.json();
+
+        showToast(t('csvSuccess'), 'success');
+        closeCsvUpload();
+        loadPortfolio();
+    } catch (err) {
+        showToast(t('csvError') + ': ' + err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = t('uploadCsv');
+    }
+}

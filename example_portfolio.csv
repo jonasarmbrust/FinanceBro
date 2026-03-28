@@ -1,0 +1,11 @@
+ticker,shares,buy_price,buy_date,currency,sector,name
+AAPL,15,142.50,2024-03-15,USD,Technology,Apple Inc.
+MSFT,10,285.00,2024-01-20,USD,Technology,Microsoft Corp.
+NVDA,8,450.00,2024-06-01,USD,Technology,NVIDIA Corp.
+GOOGL,12,125.00,2024-02-10,USD,Technology,Alphabet Inc.
+AMZN,5,155.00,2024-04-05,USD,Consumer Cyclical,Amazon.com Inc.
+META,7,320.00,2024-05-20,USD,Technology,Meta Platforms Inc.
+TSLA,4,230.00,2024-03-01,USD,Consumer Cyclical,Tesla Inc.
+JPM,8,175.00,2024-01-15,USD,Financial Services,JPMorgan Chase & Co.
+V,6,260.00,2024-02-28,USD,Financial Services,Visa Inc.
+JNJ,10,155.00,2024-04-12,USD,Healthcare,Johnson & Johnson

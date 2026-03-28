@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FinanzBro – Portfolio Dashboard</title>
     <meta name="description"
-        content="Intelligentes Aktienportfolio Dashboard mit Buy/Hold/Sell Bewertungen, Rebalancing-Empfehlungen und Tech-Aktien-Research.">
+        content="Intelligent stock portfolio dashboard with Buy/Hold/Sell ratings, rebalancing recommendations and tech stock research.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
         rel="stylesheet">
@@ -20,7 +20,7 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <!-- Demo Banner -->
-    <div class="demo-banner" id="demoBanner">🎭 Demo-Modus — Fiktive Daten zu Präsentationszwecken</div>
+    <div class="demo-banner" id="demoBanner" data-i18n="demoBanner">🎭 Demo-Modus — Fiktive Daten zu Präsentationszwecken</div>
 
     <!-- Header -->
     <header class="header" id="header">
@@ -33,7 +33,7 @@
         </div>
         <div class="header-center">
             <div class="portfolio-value" id="portfolioValue">
-                <span class="value-label">Portfoliowert</span>
+                <span class="value-label" data-i18n="portfolioValue">Portfoliowert</span>
                 <span class="value-amount" id="totalValue">$0.00</span>
             </div>
             <div class="portfolio-pnl" id="portfolioPnl">
@@ -42,7 +42,7 @@
             </div>
             <span class="cash-info" id="cashInfo"></span>
             <div class="portfolio-pnl daily-change" id="dailyChange">
-                <span class="pnl-label">Heute:</span>
+                <span class="pnl-label" data-i18n="today">Heute:</span>
                 <span class="pnl-amount" id="dailyPnl">€0.00</span>
                 <span class="pnl-percent" id="dailyPnlPct">(0.0%)</span>
                 <span class="header-indices" id="headerIndices"></span>
@@ -50,29 +50,34 @@
         </div>
         <div class="header-right">
             <span class="last-update" id="lastUpdate">–</span>
+            <button class="btn-lang" id="langToggle" onclick="switchLanguage(currentLang === 'de' ? 'en' : 'de')"
+                title="Deutsch / English">DE</button>
             <button class="btn-theme" id="themeToggle" onclick="toggleTheme()"
-                title="Farbschema wechseln"><i data-lucide="moon"></i></button>
+                data-i18n-title="toggleTheme" title="Farbschema wechseln"><i data-lucide="moon"></i></button>
             <button class="btn-currency" id="currencyToggle" onclick="toggleCurrency()"
-                title="Währung wechseln">EUR</button>
+                data-i18n-title="toggleCurrency" title="Währung wechseln">EUR</button>
             <!-- Action Dropdown -->
             <div class="action-dropdown" id="actionDropdown">
                 <button class="action-dropdown-toggle" onclick="toggleActionMenu()">
-                    <i data-lucide="menu"></i> Aktionen
+                    <i data-lucide="menu"></i> <span data-i18n="actions">Aktionen</span>
                 </button>
                 <div class="action-dropdown-menu" id="actionMenu">
+                    <button class="action-dropdown-item" id="btnUploadCsv" onclick="showCsvUpload()">
+                        <i data-lucide="upload"></i> <span data-i18n="uploadCsv">CSV Import</span>
+                    </button>
                     <button class="action-dropdown-item" id="btnUpdateParqet" onclick="updateParqet()">
-                        <i data-lucide="refresh-cw"></i> Update Parqet
+                        <i data-lucide="refresh-cw"></i> <span data-i18n="updateParqet">Update Parqet</span>
                     </button>
                     <button class="action-dropdown-item" id="btnTelegramReport" onclick="triggerReport()">
-                        <i data-lucide="send"></i> Telegram Report
+                        <i data-lucide="send"></i> <span data-i18n="telegramReport">Telegram Report</span>
                     </button>
                     <div class="action-dropdown-divider"></div>
                     <button class="action-dropdown-item" id="btnRefresh" onclick="refreshData()">
-                        <i data-lucide="microscope"></i> Komplette Analyse
+                        <i data-lucide="microscope"></i> <span data-i18n="fullAnalysis">Komplette Analyse</span>
                     </button>
                     <div class="action-dropdown-divider"></div>
                     <button class="action-dropdown-item" id="btnDemo" onclick="toggleDemo()">
-                        <i data-lucide="drama"></i> Demo-Modus
+                        <i data-lucide="drama"></i> <span data-i18n="demoMode">Demo-Modus</span>
                     </button>
                 </div>
             </div>
@@ -82,22 +87,22 @@
     <!-- Navigation Tabs -->
     <nav class="tabs" id="tabs">
         <button class="tab active" data-tab="overview" onclick="switchTab('overview')">
-            <i data-lucide="trending-up"></i> Übersicht
+            <i data-lucide="trending-up"></i> <span data-i18n="overview">Übersicht</span>
         </button>
         <button class="tab" data-tab="analyse" onclick="switchTab('analyse')">
-            <i data-lucide="pie-chart"></i> Analyse
+            <i data-lucide="pie-chart"></i> <span data-i18n="analysis">Analyse</span>
         </button>
         <button class="tab" data-tab="historie" onclick="switchTab('historie')">
-            <i data-lucide="history"></i> Historie
+            <i data-lucide="history"></i> <span data-i18n="history">Historie</span>
         </button>
         <button class="tab" data-tab="rebalancing" onclick="switchTab('rebalancing')">
-            <i data-lucide="scale"></i> Rebalancing <span class="tab-badge" id="rebalancingBadge"></span>
+            <i data-lucide="scale"></i> <span data-i18n="rebalancing">Rebalancing</span> <span class="tab-badge" id="rebalancingBadge"></span>
         </button>
         <button class="tab" data-tab="techpicks" onclick="switchTab('techpicks')">
-            <i data-lucide="rocket"></i> Tech Picks
+            <i data-lucide="rocket"></i> <span data-i18n="techPicks">Tech Picks</span>
         </button>
         <button class="tab" data-tab="advisor" onclick="switchTab('advisor')">
-            <i data-lucide="brain"></i> AI Advisor
+            <i data-lucide="brain"></i> <span data-i18n="aiAdvisor">AI Advisor</span>
         </button>
         <div class="tab-indicator" id="tabIndicator"></div>
     </nav>
@@ -130,7 +135,7 @@
             <!-- Stats Row -->
             <div class="stats-row" id="statsRow">
                 <div class="stat-card stagger-in">
-                    <span class="stat-label">Positionen</span>
+                    <span class="stat-label" data-i18n="positions">Positionen</span>
                     <span class="stat-value" id="statPositions">0</span>
                 </div>
                 <div class="stat-card stat-buy stagger-in">
@@ -147,40 +152,40 @@
                 </div>
             </div>
 
-            <!-- Movers: Gewinner/Verlierer -->
+            <!-- Movers -->
             <div class="analyse-row" id="moversSection">
                 <div class="movers-card winners-card">
-                    <h3 class="section-title">🟢 Tagesgewinner</h3>
+                    <h3 class="section-title" data-i18n="dailyWinners">🟢 Tagesgewinner</h3>
                     <div id="winnersContainer"></div>
                 </div>
                 <div class="movers-card losers-card">
-                    <h3 class="section-title">🔴 Tagesverlierer</h3>
+                    <h3 class="section-title" data-i18n="dailyLosers">🔴 Tagesverlierer</h3>
                     <div id="losersContainer"></div>
                 </div>
             </div>
 
-            <!-- Portfolio Heatmap (Treemap) -->
+            <!-- Portfolio Heatmap -->
             <div class="chart-card" style="margin-bottom:1rem;">
-                <h3 class="chart-title">🗺️ Portfolio-Heatmap</h3>
+                <h3 class="chart-title" data-i18n="portfolioHeatmap">🗺️ Portfolio-Heatmap</h3>
                 <div class="treemap-container" id="heatmapContainer"></div>
             </div>
 
             <!-- Portfolio Table -->
             <div class="table-card">
                 <div class="table-header">
-                    <h3 class="table-title">Portfolio-Positionen</h3>
+                    <h3 class="table-title" data-i18n="portfolioPositions">Portfolio-Positionen</h3>
                     <div class="table-controls">
                         <div class="sort-buttons">
-                            <span class="sort-label">Sortieren:</span>
-                            <button class="sort-btn" id="sortBtn-name" onclick="sortTable('name')">Name</button>
-                            <button class="sort-btn" id="sortBtn-price" onclick="sortTable('price')">Kurs</button>
-                            <button class="sort-btn" id="sortBtn-cost" onclick="sortTable('cost')">Einstand</button>
-                            <button class="sort-btn" id="sortBtn-daily" onclick="sortTable('daily')">Heute</button>
+                            <span class="sort-label" data-i18n="sortBy">Sortieren:</span>
+                            <button class="sort-btn" id="sortBtn-name" onclick="sortTable('name')" data-i18n="name">Name</button>
+                            <button class="sort-btn" id="sortBtn-price" onclick="sortTable('price')" data-i18n="price">Kurs</button>
+                            <button class="sort-btn" id="sortBtn-cost" onclick="sortTable('cost')" data-i18n="costBasis">Einstand</button>
+                            <button class="sort-btn" id="sortBtn-daily" onclick="sortTable('daily')" data-i18n="todayShort">Heute</button>
                             <button class="sort-btn active" id="sortBtn-score"
-                                onclick="sortTable('score')">Score</button>
+                                onclick="sortTable('score')" data-i18n="score">Score</button>
                         </div>
                         <div class="filter-buttons">
-                            <button class="filter-btn active" onclick="filterTable('all', this)">Alle</button>
+                            <button class="filter-btn active" onclick="filterTable('all', this)" data-i18n="all">Alle</button>
                             <button class="filter-btn" onclick="filterTable('buy', this)">Buy</button>
                             <button class="filter-btn" onclick="filterTable('hold', this)">Hold</button>
                             <button class="filter-btn" onclick="filterTable('sell', this)">Sell</button>
@@ -191,24 +196,24 @@
                     <table class="portfolio-table" id="portfolioTable">
                         <thead>
                             <tr>
-                                <th class="sortable" onclick="sortTable('name')">Aktie <span class="sort-arrow"
+                                <th class="sortable" onclick="sortTable('name')"><span data-i18n="name">Aktie</span> <span class="sort-arrow"
                                         id="sort-name"></span></th>
-                                <th class="sortable" onclick="sortTable('price')">Kurs <span class="sort-arrow"
+                                <th class="sortable" onclick="sortTable('price')"><span data-i18n="price">Kurs</span> <span class="sort-arrow"
                                         id="sort-price"></span></th>
-                                <th class="sortable" onclick="sortTable('cost')">Einstand <span class="sort-arrow"
+                                <th class="sortable" onclick="sortTable('cost')"><span data-i18n="costBasis">Einstand</span> <span class="sort-arrow"
                                         id="sort-cost"></span></th>
-                                <th class="sortable" onclick="sortTable('daily')">Heute <span class="sort-arrow"
+                                <th class="sortable" onclick="sortTable('daily')"><span data-i18n="todayShort">Heute</span> <span class="sort-arrow"
                                         id="sort-daily"></span></th>
-                                <th class="sortable" onclick="sortTable('shares')">Stk. <span class="sort-arrow"
+                                <th class="sortable" onclick="sortTable('shares')"><span data-i18n="shares">Stk.</span> <span class="sort-arrow"
                                         id="sort-shares"></span></th>
-                                <th class="sortable" onclick="sortTable('value')">Wert <span class="sort-arrow"
+                                <th class="sortable" onclick="sortTable('value')"><span data-i18n="value">Wert</span> <span class="sort-arrow"
                                         id="sort-value"></span></th>
                                 <th class="sortable" onclick="sortTable('pnl')">P&L <span class="sort-arrow"
                                         id="sort-pnl"></span></th>
-                                <th class="sortable" onclick="sortTable('score')">Score <span class="sort-arrow"
+                                <th class="sortable" onclick="sortTable('score')"><span data-i18n="score">Score</span> <span class="sort-arrow"
                                         id="sort-score"></span></th>
-                                <th>Rating</th>
-                                <th>Details</th>
+                                <th data-i18n="rating">Rating</th>
+                                <th data-i18n="details">Details</th>
                             </tr>
                         </thead>
                         <tbody id="portfolioTableBody">
@@ -220,26 +225,26 @@
             </div>
         </section>
 
-        <!-- Tab: Analyse -->
+        <!-- Tab: Analysis -->
         <section class="tab-content" id="tab-analyse">
-            <!-- Sektor-Allokation + Risiko -->
+            <!-- Sector Allocation + Risk -->
             <div class="analyse-row">
                 <div class="chart-card analyse-wide">
-                    <h3 class="chart-title">🏗️ Sektor-Allokation</h3>
+                    <h3 class="chart-title" data-i18n="sectorAllocation">🏗️ Sektor-Allokation</h3>
                     <div class="chart-container">
                         <canvas id="sectorChart"></canvas>
                     </div>
                 </div>
                 <div class="chart-card analyse-narrow">
-                    <h3 class="chart-title">🛡️ Risiko-Profil</h3>
+                    <h3 class="chart-title" data-i18n="riskProfile">🛡️ Risiko-Profil</h3>
                     <div id="riskContainer"></div>
                 </div>
             </div>
 
-            <!-- Benchmark + Dividenden -->
+            <!-- Benchmark + Dividends -->
             <div class="analyse-row">
                 <div class="chart-card analyse-wide">
-                    <h3 class="chart-title">📈 Performance vs. Benchmark</h3>
+                    <h3 class="chart-title" data-i18n="performanceBenchmark">📈 Performance vs. Benchmark</h3>
                     <div class="benchmark-controls" id="benchmarkControls">
                         <select id="benchmarkSymbol" onchange="loadBenchmark()">
                             <option value="SPY">S&P 500</option>
@@ -247,9 +252,9 @@
                             <option value="QQQ">Nasdaq 100</option>
                         </select>
                         <select id="benchmarkPeriod" onchange="loadBenchmark()">
-                            <option value="3month">3 Monate</option>
-                            <option value="6month" selected>6 Monate</option>
-                            <option value="1year">1 Jahr</option>
+                            <option value="3month" data-i18n="months3">3 Monate</option>
+                            <option value="6month" selected data-i18n="months6">6 Monate</option>
+                            <option value="1year" data-i18n="year1">1 Jahr</option>
                         </select>
                     </div>
                     <div style="height:280px;position:relative;">
@@ -257,65 +262,65 @@
                     </div>
                 </div>
                 <div class="chart-card analyse-narrow">
-                    <h3 class="chart-title">💰 Dividenden</h3>
+                    <h3 class="chart-title" data-i18n="dividends">💰 Dividenden</h3>
                     <div id="dividendContainer"></div>
                 </div>
             </div>
 
-            <!-- Korrelation + Earnings -->
+            <!-- Correlation + Earnings -->
             <div class="analyse-row">
                 <div class="chart-card analyse-wide">
-                    <h3 class="chart-title">🔗 Korrelationsmatrix</h3>
+                    <h3 class="chart-title" data-i18n="correlationMatrix">🔗 Korrelationsmatrix</h3>
                     <div id="correlationContainer"></div>
                 </div>
                 <div class="chart-card analyse-narrow">
-                    <h3 class="chart-title">📅 Earnings-Kalender</h3>
+                    <h3 class="chart-title" data-i18n="earningsCalendar">📅 Earnings-Kalender</h3>
                     <div id="earningsContainer"></div>
                 </div>
             </div>
         </section>
 
-        <!-- Tab: Historie -->
+        <!-- Tab: History -->
         <section class="tab-content" id="tab-historie">
             <!-- Performance KPI Cards -->
             <div class="performance-kpis" id="performanceKpis" style="display:none;">
                 <div class="kpi-grid">
                     <div class="kpi-card kpi-valuation stagger-in">
-                        <span class="kpi-label">📊 Gesamtwert</span>
+                        <span class="kpi-label" data-i18n="totalValue">📊 Gesamtwert</span>
                         <span class="kpi-value" id="kpiValuation">—</span>
                     </div>
                     <div class="kpi-card kpi-unrealized stagger-in">
-                        <span class="kpi-label">📈 Unrealisiert</span>
+                        <span class="kpi-label" data-i18n="unrealized">📈 Unrealisiert</span>
                         <span class="kpi-value" id="kpiUnrealized">—</span>
                         <span class="kpi-sub" id="kpiUnrealizedPct"></span>
                     </div>
                     <div class="kpi-card kpi-realized stagger-in">
-                        <span class="kpi-label">💰 Realisiert</span>
+                        <span class="kpi-label" data-i18n="realized">💰 Realisiert</span>
                         <span class="kpi-value" id="kpiRealized">—</span>
                     </div>
                     <div class="kpi-card kpi-dividends stagger-in">
-                        <span class="kpi-label">🪙 Dividenden</span>
+                        <span class="kpi-label" data-i18n="dividendsKpi">🪙 Dividenden</span>
                         <span class="kpi-value" id="kpiDividends">—</span>
                     </div>
                     <div class="kpi-card kpi-taxes stagger-in">
-                        <span class="kpi-label">🏛️ Steuern</span>
+                        <span class="kpi-label" data-i18n="taxes">🏛️ Steuern</span>
                         <span class="kpi-value" id="kpiTaxes">—</span>
                     </div>
                     <div class="kpi-card kpi-fees stagger-in">
-                        <span class="kpi-label">💳 Gebühren</span>
+                        <span class="kpi-label" data-i18n="fees">💳 Gebühren</span>
                         <span class="kpi-value" id="kpiFees">—</span>
                     </div>
                 </div>
                 <div class="kpi-interval" id="kpiInterval"></div>
             </div>
 
-            <!-- Holdings Table (sortierbar) -->
+            <!-- Holdings Table -->
             <div class="chart-card holdings-section" id="holdingsSection" style="padding:1.5rem;">
-                <h3 class="chart-title">📋 Alle Positionen (Parqet)</h3>
+                <h3 class="chart-title" data-i18n="allPositions">📋 Alle Positionen</h3>
                 <div class="holdings-tabs" style="margin-bottom:1rem;">
-                    <button class="filter-btn active" onclick="filterHoldings('active', this)">Aktiv</button>
-                    <button class="filter-btn" onclick="filterHoldings('sold', this)">Verkauft</button>
-                    <button class="filter-btn" onclick="filterHoldings('all', this)">Alle</button>
+                    <button class="filter-btn active" onclick="filterHoldings('active', this)" data-i18n="active">Aktiv</button>
+                    <button class="filter-btn" onclick="filterHoldings('sold', this)" data-i18n="sold">Verkauft</button>
+                    <button class="filter-btn" onclick="filterHoldings('all', this)" data-i18n="all">Alle</button>
                 </div>
                 <div class="holdings-table-wrap" id="holdingsTableWrap"></div>
             </div>
@@ -324,8 +329,8 @@
         <!-- Tab: Rebalancing -->
         <section class="tab-content" id="tab-rebalancing">
             <div class="rebalancing-header">
-                <h2 class="section-title">⚖️ Rebalancing-Empfehlungen</h2>
-                <p class="rebalancing-summary" id="rebalancingSummary">Wird berechnet...</p>
+                <h2 class="section-title" data-i18n="rebalancingRecommendations">⚖️ Rebalancing-Empfehlungen</h2>
+                <p class="rebalancing-summary" id="rebalancingSummary" data-i18n="calculating">Wird berechnet...</p>
             </div>
             <div class="rebalancing-cards" id="rebalancingCards">
             </div>
@@ -334,8 +339,8 @@
         <!-- Tab: Tech Picks -->
         <section class="tab-content" id="tab-techpicks">
             <div class="techpicks-header">
-                <h2 class="section-title">🚀 Tägliche Tech-Empfehlungen</h2>
-                <p class="techpicks-subtitle">Aktien aus dem Technologie-Sektor mit hohem Potenzial</p>
+                <h2 class="section-title" data-i18n="dailyTechPicks">🚀 Tägliche Tech-Empfehlungen</h2>
+                <p class="techpicks-subtitle" data-i18n="techPicksSubtitle">Aktien aus dem Technologie-Sektor mit hohem Potenzial</p>
             </div>
             <div class="techpicks-grid" id="techPicksGrid">
             </div>
@@ -347,84 +352,84 @@
                 <!-- Mode Toggle -->
                 <div class="advisor-mode-toggle">
                     <button class="advisor-mode-btn active" id="advisorModeAnalyse" onclick="switchAdvisorMode('analyse')">
-                        <i data-lucide="search"></i> Trade-Analyse
+                        <i data-lucide="search"></i> <span data-i18n="tradeAnalysis">Trade-Analyse</span>
                     </button>
                     <button class="advisor-mode-btn" id="advisorModeChat" onclick="switchAdvisorMode('chat')">
-                        <i data-lucide="message-circle"></i> Chat
+                        <i data-lucide="message-circle"></i> <span data-i18n="chat">Chat</span>
                     </button>
                 </div>
 
-                <!-- Mode: Analyse (bestehend) -->
+                <!-- Mode: Analysis -->
                 <div class="advisor-mode-content active" id="advisorAnalyseMode">
                     <div class="advisor-form-card">
-                        <h2 class="section-title">🧠 AI Trade Advisor</h2>
-                        <p class="advisor-subtitle">Evaluiere Kauf- und Verkaufsentscheidungen mit KI-gestützter Portfolio-Analyse</p>
+                        <h2 class="section-title" data-i18n="aiTradeAdvisor">🧠 AI Trade Advisor</h2>
+                        <p class="advisor-subtitle" data-i18n="advisorSubtitle">Evaluiere Kauf- und Verkaufsentscheidungen mit KI-gestützter Portfolio-Analyse</p>
 
                         <div class="advisor-form">
                             <div class="advisor-form-row">
                                 <div class="advisor-field">
-                                    <label for="advisorTicker">Ticker</label>
+                                    <label for="advisorTicker" data-i18n="ticker">Ticker</label>
                                     <div class="advisor-input-wrapper">
-                                        <input type="text" id="advisorTicker" placeholder="z.B. NVDA" autocomplete="off" spellcheck="false">
+                                        <input type="text" id="advisorTicker" data-i18n="tickerPlaceholder" placeholder="z.B. NVDA" autocomplete="off" spellcheck="false">
                                         <div class="advisor-autocomplete" id="advisorAutocomplete"></div>
                                     </div>
                                 </div>
                                 <div class="advisor-field">
-                                    <label>Aktion</label>
+                                    <label data-i18n="action">Aktion</label>
                                     <div class="advisor-action-group">
-                                        <button class="advisor-action-btn active" data-action="buy" onclick="setAdvisorAction('buy', this)">Kauf</button>
-                                        <button class="advisor-action-btn" data-action="increase" onclick="setAdvisorAction('increase', this)">Aufstocken</button>
-                                        <button class="advisor-action-btn" data-action="sell" onclick="setAdvisorAction('sell', this)">Verkauf</button>
+                                        <button class="advisor-action-btn active" data-action="buy" onclick="setAdvisorAction('buy', this)" data-i18n="buy">Kauf</button>
+                                        <button class="advisor-action-btn" data-action="increase" onclick="setAdvisorAction('increase', this)" data-i18n="increase">Aufstocken</button>
+                                        <button class="advisor-action-btn" data-action="sell" onclick="setAdvisorAction('sell', this)" data-i18n="sell">Verkauf</button>
                                     </div>
                                 </div>
                                 <div class="advisor-field">
-                                    <label for="advisorAmount">Betrag (EUR)</label>
-                                    <input type="number" id="advisorAmount" placeholder="z.B. 2000" min="0" step="100">
+                                    <label for="advisorAmount" data-i18n="amountEur">Betrag (EUR)</label>
+                                    <input type="number" id="advisorAmount" data-i18n="amountPlaceholder" placeholder="z.B. 2000" min="0" step="100">
                                 </div>
                             </div>
 
                             <div class="advisor-field">
-                                <label for="advisorContext">📎 Externe Quellen <span class="advisor-optional">(optional)</span></label>
-                                <textarea id="advisorContext" rows="4" placeholder="Analystenkommentare, Artikel-Auszüge oder eigene Notizen hier einfügen..."></textarea>
+                                <label for="advisorContext"><span data-i18n="externalSources">📎 Externe Quellen</span> <span class="advisor-optional" data-i18n="optional">(optional)</span></label>
+                                <textarea id="advisorContext" rows="4" data-i18n="contextPlaceholder" placeholder="Analystenkommentare, Artikel-Auszüge oder eigene Notizen hier einfügen..."></textarea>
                             </div>
 
                             <button class="advisor-submit-btn" id="advisorSubmitBtn" onclick="submitAdvisorQuery()">
-                                <span class="advisor-btn-text"><i data-lucide="search"></i> Analyse starten</span>
-                                <span class="advisor-btn-loading" style="display:none;">⏳ AI analysiert...</span>
+                                <span class="advisor-btn-text"><i data-lucide="search"></i> <span data-i18n="startAnalysis">Analyse starten</span></span>
+                                <span class="advisor-btn-loading" style="display:none;" data-i18n="aiAnalyzing">⏳ AI analysiert...</span>
                             </button>
                         </div>
                     </div>
 
-                    <!-- Ergebnis -->
+                    <!-- Result -->
                     <div class="advisor-result" id="advisorResult" style="display:none;"></div>
                 </div>
 
-                <!-- Mode: Chat (neu) -->
+                <!-- Mode: Chat -->
                 <div class="advisor-mode-content" id="advisorChatMode" style="display:none;">
                     <div class="advisor-chat-card">
                         <div class="advisor-chat-header">
-                            <h2 class="section-title">💬 Portfolio-Chat</h2>
-                            <button class="advisor-chat-clear" onclick="clearAdvisorChat()" title="Neue Konversation">🗑️ Neu</button>
+                            <h2 class="section-title" data-i18n="portfolioChat">💬 Portfolio-Chat</h2>
+                            <button class="advisor-chat-clear" onclick="clearAdvisorChat()" title="Neue Konversation" data-i18n="newChat">🗑️ Neu</button>
                         </div>
-                        <p class="advisor-subtitle">Stelle Fragen, diskutiere Hypothesen, analysiere Szenarien — mit vollem Portfolio-Kontext</p>
+                        <p class="advisor-subtitle" data-i18n="chatSubtitle">Stelle Fragen, diskutiere Hypothesen, analysiere Szenarien — mit vollem Portfolio-Kontext</p>
 
                         <div class="advisor-chat-messages" id="advisorChatMessages">
                             <div class="advisor-chat-welcome">
-                                <p>👋 Hallo! Ich bin dein Portfolio-Berater.</p>
-                                <p>Du kannst mich alles zu deinem Portfolio fragen. Beispiele:</p>
+                                <p data-i18n="chatWelcome1">👋 Hallo! Ich bin dein Portfolio-Berater.</p>
+                                <p data-i18n="chatWelcome2">Du kannst mich alles zu deinem Portfolio fragen. Beispiele:</p>
                                 <div class="advisor-chat-suggestions">
-                                    <button class="advisor-chat-suggestion" onclick="sendChatSuggestion(this)">Wie diversifiziert ist mein Portfolio?</button>
-                                    <button class="advisor-chat-suggestion" onclick="sendChatSuggestion(this)">Was passiert wenn der USD 10% fällt?</button>
-                                    <button class="advisor-chat-suggestion" onclick="sendChatSuggestion(this)">Welche Aktie hat das beste Chance/Risiko-Verhältnis?</button>
-                                    <button class="advisor-chat-suggestion" onclick="sendChatSuggestion(this)">Wie hoch ist mein Klumpenrisiko im Tech-Sektor?</button>
+                                    <button class="advisor-chat-suggestion" onclick="sendChatSuggestion(this)" data-i18n="chatSuggestion1">Wie diversifiziert ist mein Portfolio?</button>
+                                    <button class="advisor-chat-suggestion" onclick="sendChatSuggestion(this)" data-i18n="chatSuggestion2">Was passiert wenn der USD 10% fällt?</button>
+                                    <button class="advisor-chat-suggestion" onclick="sendChatSuggestion(this)" data-i18n="chatSuggestion3">Welche Aktie hat das beste Chance/Risiko-Verhältnis?</button>
+                                    <button class="advisor-chat-suggestion" onclick="sendChatSuggestion(this)" data-i18n="chatSuggestion4">Wie hoch ist mein Klumpenrisiko im Tech-Sektor?</button>
                                 </div>
                             </div>
                         </div>
 
                         <div class="advisor-chat-input-area">
-                            <textarea id="advisorChatInput" rows="2" placeholder="Deine Frage..." onkeydown="handleChatKeydown(event)"></textarea>
+                            <textarea id="advisorChatInput" rows="2" data-i18n="chatInputPlaceholder" placeholder="Deine Frage..." onkeydown="handleChatKeydown(event)"></textarea>
                             <button class="advisor-chat-send" id="advisorChatSendBtn" onclick="sendAdvisorChat()">
-                                <span class="chat-send-text">Senden</span>
+                                <span class="chat-send-text" data-i18n="send">Senden</span>
                                 <span class="chat-send-loading" style="display:none;">⏳</span>
                             </button>
                         </div>
@@ -444,10 +449,10 @@
         </div>
         <!-- Panel Inner Tabs -->
         <div class="panel-tabs" id="panelTabs">
-            <button class="panel-tab active" onclick="switchPanelTab('overview', this)">Übersicht</button>
-            <button class="panel-tab" onclick="switchPanelTab('fundamentals', this)">Fundamentals</button>
-            <button class="panel-tab" onclick="switchPanelTab('technical', this)">Technisch</button>
-            <button class="panel-tab" onclick="switchPanelTab('news', this)">News</button>
+            <button class="panel-tab active" onclick="switchPanelTab('overview', this)" data-i18n="stockOverview">Übersicht</button>
+            <button class="panel-tab" onclick="switchPanelTab('fundamentals', this)" data-i18n="fundamentals">Fundamentals</button>
+            <button class="panel-tab" onclick="switchPanelTab('technical', this)" data-i18n="technical">Technisch</button>
+            <button class="panel-tab" onclick="switchPanelTab('news', this)" data-i18n="news">News</button>
         </div>
         <div id="panelContent-overview" class="panel-tab-content active"></div>
         <div id="panelContent-fundamentals" class="panel-tab-content"></div>
@@ -455,39 +460,60 @@
         <div id="panelContent-news" class="panel-tab-content"></div>
     </div>
 
+    <!-- CSV Upload Modal -->
+    <div class="slide-panel-overlay" id="csvUploadOverlay" onclick="closeCsvUpload()" style="display:none;"></div>
+    <div class="csv-upload-modal" id="csvUploadModal" style="display:none;">
+        <button class="modal-close" onclick="closeCsvUpload()">✕</button>
+        <h2 class="section-title" data-i18n="csvUploadTitle">CSV Portfolio Import</h2>
+        <p class="advisor-subtitle" data-i18n="csvUploadDesc">Importiere dein Portfolio aus einer CSV-Datei</p>
+        <div class="csv-upload-area" id="csvDropZone">
+            <i data-lucide="upload-cloud" style="width:48px;height:48px;color:var(--accent);"></i>
+            <p data-i18n="csvSelectFile">Datei auswählen</p>
+            <p class="csv-format-hint" data-i18n="csvFormatHint">Format: ticker, shares, buy_price, buy_date, currency (optional)</p>
+            <input type="file" id="csvFileInput" accept=".csv" style="display:none;" onchange="handleCsvFile(event)">
+        </div>
+        <div class="csv-preview" id="csvPreview" style="display:none;"></div>
+        <button class="advisor-submit-btn" id="csvImportBtn" onclick="importCsvPortfolio()" style="display:none;">
+            <span data-i18n="uploadCsv">CSV Import</span>
+        </button>
+    </div>
+
     <!-- Mobile Bottom Navigation -->
     <nav class="bottom-nav" id="bottomNav">
         <div class="bottom-nav-inner">
             <button class="bottom-nav-item active" data-tab="overview" onclick="switchTab('overview'); updateBottomNav(this);">
                 <i data-lucide="trending-up"></i>
-                <span>Übersicht</span>
+                <span data-i18n="overview">Übersicht</span>
             </button>
             <button class="bottom-nav-item" data-tab="analyse" onclick="switchTab('analyse'); updateBottomNav(this);">
                 <i data-lucide="pie-chart"></i>
-                <span>Analyse</span>
+                <span data-i18n="analysis">Analyse</span>
             </button>
             <button class="bottom-nav-item" data-tab="rebalancing" onclick="switchTab('rebalancing'); updateBottomNav(this);">
                 <i data-lucide="scale"></i>
-                <span>Rebalance</span>
+                <span data-i18n="rebalance">Rebalance</span>
             </button>
             <button class="bottom-nav-item" data-tab="techpicks" onclick="switchTab('techpicks'); updateBottomNav(this);">
                 <i data-lucide="rocket"></i>
-                <span>Picks</span>
+                <span data-i18n="picks">Picks</span>
             </button>
             <button class="bottom-nav-item" data-tab="advisor" onclick="switchTab('advisor'); updateBottomNav(this);">
                 <i data-lucide="brain"></i>
-                <span>AI</span>
+                <span data-i18n="ai">AI</span>
             </button>
         </div>
     </nav>
 
+    <script src="/static/translations.js"></script>
     <script src="/static/app.js"></script>
     <script>
-        // Initialize Lucide icons after DOM is ready
+        // Initialize Lucide icons and translations after DOM is ready
         document.addEventListener('DOMContentLoaded', () => {
             if (window.lucide) lucide.createIcons();
+            applyTranslations();
         });
     </script>
+
 </body>
 
 </html>

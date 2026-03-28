@@ -32,17 +32,21 @@ A full-stack portfolio dashboard combining real-time market data, fundamental an
 
 🔄 **Fully Autonomous** — APScheduler handles it all: price updates every 15 min, daily analysis at 16:15, weekly digest, news curator 4x daily
 
+📄 **CSV Portfolio Import** — No Parqet account? Import your portfolio from any CSV file with ticker, shares, and buy price. Works with any broker export.
+
+🌐 **Bilingual UI** — Switch between English and German with one click. Language preference is saved automatically.
+
 ## 🛠️ Tech Stack
 
 | Layer | Technologies |
 |---|---|
 | **Backend** | Python 3.12, FastAPI, Uvicorn, Pydantic, APScheduler |
 | **AI** | Google Gemini 2.5 Pro + Flash (Function Calling, Structured Output, Context Caching) |
-| **Data** | Parqet API (OAuth2/PKCE), FMP API, yFinance, CNN Fear & Greed |
-| **Frontend** | Vanilla HTML/JS/CSS, Chart.js, SSE Streaming, Dark/Light Mode |
+| **Data** | Parqet API (OAuth2/PKCE), CSV Import, FMP API, yFinance, CNN Fear & Greed |
+| **Frontend** | Vanilla HTML/JS/CSS, Chart.js, SSE Streaming, Dark/Light Mode, i18n (DE/EN) |
 | **Infrastructure** | Docker, Google Cloud Run (Service + Job), SQLite |
 | **Bot** | Telegram Bot API (Commands, Voice Input, Inline Buttons) |
-| **Tests** | pytest (368+ tests, 21 test files) |
+| **Tests** | pytest (390+ tests, 22 test files) |
 
 ## 💡 Why I Built This
 
