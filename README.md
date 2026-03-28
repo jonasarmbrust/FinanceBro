@@ -6,6 +6,7 @@
 [![Gemini AI](https://img.shields.io/badge/Gemini_AI-2.5_Pro-4285F4.svg?logo=google&logoColor=white)](https://ai.google.dev)
 [![Cloud Run](https://img.shields.io/badge/Cloud_Run-Deployed-4285F4.svg?logo=googlecloud&logoColor=white)](https://cloud.google.com/run)
 [![Tests](https://img.shields.io/badge/Tests-368%2B-22c55e.svg)](tests/)
+[![CI/CD](https://github.com/jonasarmbrust/FinanzBro/actions/workflows/deploy.yml/badge.svg)](https://github.com/jonasarmbrust/FinanzBro/actions)
 
 > **Dein Portfolio. Deine Regeln. Unterstützt durch KI.**
 
@@ -170,68 +171,18 @@ Alle JSON-AI-Services nutzen `response_schema` — Gemini garantiert valides JSO
 
 ## API-Endpoints
 
-### Portfolio (`routes/portfolio.py`)
-| Methode | Pfad | Beschreibung |
-|---|---|---|
-| GET | `/` | Dashboard (HTML) |
-| GET | `/api/portfolio` | Portfolio-Daten (JSON) |
-| GET | `/api/stock/{ticker}` | Einzelaktie Details |
-| GET | `/api/stock/{ticker}/history` | Kurs-History einer Einzelaktie |
-| GET | `/api/portfolio/history` | Portfolio-Wert-Entwicklung |
-| GET | `/api/portfolio/activities` | Kauf-/Verkaufs-Aktivitäten |
-| GET | `/api/rebalancing` | Rebalancing-Empfehlungen |
-| GET | `/api/tech-picks` | Tech-Aktien Screening (yFinance Screener) |
-| GET | `/api/sectors` | Sektor-Allokation |
-| GET | `/api/fear-greed` | Fear & Greed Index |
-| GET | `/api/status` | System-Status |
+42+ REST-Endpoints, gruppiert in 6 Module:
 
-### Demo Mode (`routes/demo.py`)
-| Methode | Pfad | Beschreibung |
+| Modul | Endpoints | Highlights |
 |---|---|---|
-| POST | `/api/demo/activate` | Demo-Portfolio laden (12 fiktive Positionen) |
-| POST | `/api/demo/deactivate` | Demo deaktivieren, echter Refresh |
-| GET | `/api/demo/status` | Demo-Modus aktiv? |
+| **Portfolio** | 11 | Dashboard, Positionen, Sektoren, Fear & Greed |
+| **Analytics** | 13 | Benchmark, Korrelation, Risk, Dividenden, Heatmap |
+| **AI Advisor** | 8 | Trade-Bewertung, Chat, Backtest, Score-Trends |
+| **Refresh** | 8 | Granulare Updates (Preise, Scores, Report) |
+| **Demo** | 3 | Demo-Portfolio aktivieren/deaktivieren |
+| **Streaming** | 1 | SSE Echtzeit-Kurse |
 
-### Refresh (`routes/refresh.py`)
-| Methode | Pfad | Beschreibung |
-|---|---|---|
-| POST | `/api/refresh` | Kompletter Refresh |
-| POST | `/api/refresh/prices` | Nur Kurse updaten |
-| POST | `/api/refresh/portfolio` | Nur Portfolio-Positionen updaten |
-| POST | `/api/refresh/parqet` | Nur Parqet-Positionen |
-| POST | `/api/refresh/scores` | Nur Scores neuberechnen |
-| POST | `/api/trigger-report` | AI-Report manuell auslösen |
-| POST | `/api/trigger-weekly-digest` | Weekly Digest manuell auslösen |
-| GET | `/api/refresh/status` | Refresh-Fortschritt |
-
-### AI Advisor & Analysis (`routes/analysis.py`)
-| Methode | Pfad | Beschreibung |
-|---|---|---|
-| POST | `/api/analysis/run` | Analyse starten |
-| GET | `/api/analysis/latest` | Letzte Analyse abrufen |
-| GET | `/api/analysis/history` | Analyse-Historie |
-| GET | `/api/analysis/trend/{ticker}` | Score-Trend einer Aktie |
-| GET | `/api/backtest` | Score-Backtest |
-| GET | `/api/sectors/rotation` | Sektor-Rotation-Analyse |
-| POST | `/api/advisor/evaluate` | Trade-Bewertung (Kauf/Verkauf/Aufstocken) |
-| POST | `/api/advisor/chat` | Freie Portfolio-Diskussion (Multi-Turn) |
-
-### Analytics (`routes/analytics.py`)
-| Methode | Pfad | Beschreibung |
-|---|---|---|
-| GET | `/api/market-indices` | S&P 500, Nasdaq, DAX |
-| GET | `/api/movers` | Top Gewinner/Verlierer |
-| GET | `/api/heatmap` | Portfolio-Treemap |
-| GET | `/api/dividends` | Dividenden-Übersicht |
-| GET | `/api/benchmark` | Benchmark-Vergleich |
-| GET | `/api/correlation` | Korrelationsmatrix |
-| GET | `/api/earnings-calendar` | Earnings-Kalender (Portfolio-Positionen) |
-| GET | `/api/stock/{ticker}/news` | Aktien-News |
-| GET | `/api/risk` | Beta, VaR, Max Drawdown |
-| GET | `/api/stock/{ticker}/score-history` | Score-Entwicklung einer Aktie |
-| GET | `/api/attribution` | P&L Attribution |
-| GET | `/api/portfolio/history-detail` | Detaillierte Portfolio-Historie (Einzelaktien) |
-| GET | `/api/performance` | Performance-Kennzahlen |
+📖 **[Vollständige API-Dokumentation →](docs/api.md)**
 
 ## Persistenz
 
