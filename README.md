@@ -84,13 +84,14 @@ The answer turned out to be *yes* — and the journey taught me more about AI's 
 ## Architecture
 
 ```
-Browser (HTML/JS/CSS)
+Browser (HTML/JS/CSS + i18n DE/EN)
     ↕ REST API + SSE
 FastAPI Backend (local / Cloud Run)
-    ├── routes/          → API endpoints
+    ├── routes/          → API endpoints (portfolio, AI advisor, CSV upload)
     ├── engine/          → Scoring, analysis, rebalancing, attribution
-    ├── services/        → Refresh, AI agent, Telegram bot, Vertex AI
-    ├── fetchers/        → Data sources (Parqet, FMP, yfinance)
+    ├── services/        → Portfolio builder, AI agent, Telegram bot, Vertex AI
+    ├── fetchers/        → Data sources (Parqet, CSV, FMP, yfinance)
+    ├── static/          → Dashboard SPA + translations.js (200+ i18n keys)
     ├── database.py      → SQLite persistence (WAL, score history, snapshots)
     └── cache/           → In-memory + disk caches
 ```
@@ -100,6 +101,7 @@ FastAPI Backend (local / Cloud Run)
 | Source | Module | Auth | Provides |
 |---|---|---|---|
 | **Parqet** | `fetchers/parqet.py` | OAuth2 / JWT | Portfolio positions, cost basis, sectors |
+| **CSV Import** | `fetchers/csv_reader.py` | – | Portfolio positions from any CSV file (no account needed) |
 | **FMP** | `fetchers/fmp.py` | `FMP_API_KEY` | Fundamentals, analysts, dividends, news (6h cache protection) |
 | **yfinance** | `fetchers/yfinance_data.py` | – | Prices, recommendations, insider, ESG, earnings surprise, Altman Z, Piotroski |
 | **yFinance WS** | `fetchers/yfinance_ws.py` | – | Real-time prices (WebSocket, international) |
@@ -164,6 +166,31 @@ All JSON-based AI services use `response_schema` — Gemini guarantees valid JSO
 | Investable Cash (R3) | Buy recommendations limited to available cash |
 | Conviction Sizing (R4) | High (≥70): 1.5×, Mid (45-69): 1.0×, Low (<45): 0.6× |
 | Portfolio Health Score (R5) | 0-100 score: HHI, sector, beta, quality, position count |
+
+## CSV Portfolio Import
+
+No Parqet account? Import your portfolio from any CSV file:
+
+```csv
+ticker,shares,buy_price,buy_date,currency,sector,name
+AAPL,15,142.50,2024-03-15,USD,Technology,Apple Inc.
+MSFT,10,285.00,2024-01-20,USD,Technology,Microsoft Corp.
+```
+
+**Required columns:** `ticker`, `shares`, `buy_price`
+**Optional columns:** `buy_date`, `currency` (default: USD), `sector`, `name`
+
+The import flow:
+1. Upload CSV via dashboard (Actions → CSV Import)
+2. Preview parsed positions before importing
+3. Live prices are fetched automatically from yFinance
+4. All scoring, AI, and analytics features work identically
+
+> An `example_portfolio.csv` is included in the repository.
+
+## Bilingual UI (DE/EN)
+
+The dashboard supports German and English. Click the language toggle (DE/EN) in the header to switch. The AI Trade Advisor and Chat also respond in the selected language. Preference is saved in `localStorage`.
 
 ## Telegram Bot (`/help` for all commands)
 
