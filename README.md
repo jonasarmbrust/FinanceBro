@@ -10,7 +10,7 @@
 
 > **Your portfolio. Your rules. Powered by AI.**
 
-A full-stack portfolio dashboard combining real-time market data, fundamental analysis, and AI-driven recommendations in a modern web interface. Runs locally or on **Google Cloud Run** — and acts autonomously: proactive Telegram alerts on market-relevant events, daily AI reports, and a Telegram bot that responds to voice and text messages.
+FinanzBro is not just a dashboard—it is a full-fledged **AI Financial Agent** built around Google's Gemini 2.5 Pro. It autonomously monitors your stock portfolio, analyzes real-time market conditions, and communicates with you via a beautiful web UI and a proactive Telegram bot. By combining a hard-coded 10-factor quantitative model with sophisticated LLM reasoning, it bridges the gap between classic stock screeners and modern agentic AI.
 
 ![FinanzBro Dashboard](docs/screenshots/dashboard-overview.png)
 
