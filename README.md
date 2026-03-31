@@ -34,8 +34,10 @@ FinanceBro operates on the modern Agent paradigm (*Perceive → Reason → Act*)
 | **Rebalancing** — Conviction-based with sector risk warnings | **AI Trade Advisor** — Evaluate trades with Gemini 2.5 Pro |
 | ![Shadow Agent DE](docs/screenshots/shadow-agent-de.png) | ![Shadow Agent EN](docs/screenshots/shadow-agent-en.png) |
 | **Shadow Agent (DE)** — Autonomous paper-trading agent | **Shadow Agent (EN)** — Bilingual UI support |
-| ![History](docs/screenshots/history-tab.png) | ![Stock Detail](docs/screenshots/stock-detail.png) |
-| **History** — Full position history with P&L, dividends, taxes | **Stock Detail** — 10-factor score breakdown with chart |
+| ![Shadow Config](docs/screenshots/shadow-agent-config.png) | ![Stock Detail](docs/screenshots/stock-detail.png) |
+| **Agent Configuration** — Strategy modes & portfolio rules | **Stock Detail** — 10-factor score breakdown with chart |
+| ![History](docs/screenshots/history-tab.png) | |
+| **History** — Full position history with P&L, dividends, taxes | |
 
 </details>
 
