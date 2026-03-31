@@ -10,7 +10,7 @@ env:
   PROJECT_ID: job-automation-jonas
   REGION: europe-west1
   SERVICE: financebro
-  IMAGE: europe-west1-docker.pkg.dev/job-automation-jonas/financebro/financebro
+  IMAGE: europe-west1-docker.pkg.dev/job-automation-jonas/finanzbro/financebro
 
 jobs:
   test:
