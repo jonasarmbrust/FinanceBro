@@ -5,7 +5,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Gemini AI](https://img.shields.io/badge/Gemini_AI-2.5_Pro-4285F4.svg?logo=google&logoColor=white)](https://ai.google.dev)
 [![Cloud Run](https://img.shields.io/badge/Cloud_Run-Deployed-4285F4.svg?logo=googlecloud&logoColor=white)](https://cloud.google.com/run)
-[![Tests](https://img.shields.io/badge/Tests-368%2B-22c55e.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-391-22c55e.svg)](tests/)
 [![CI/CD](https://github.com/jonasarmbrust/FinanceBro/actions/workflows/deploy.yml/badge.svg)](https://github.com/jonasarmbrust/FinanceBro/actions)
 
 > **Watch the markets. Reason with data. Act on conviction.**
@@ -47,7 +47,7 @@ FinanceBro operates on the modern Agent paradigm (*Perceive → Reason → Act*)
 | **Frontend** | Vanilla HTML/JS/CSS, Chart.js, SSE Streaming, Dark/Light Mode, i18n (DE/EN) |
 | **Infrastructure** | Docker, Google Cloud Run (Service + Job), SQLite |
 | **Bot** | Telegram Bot API (Commands, Voice Input, Inline Buttons) |
-| **Tests** | pytest (390+ tests, 22 test files) |
+| **Tests** | pytest (391 tests, 22 test files) |
 
 ## 💡 The Vision: From Dashboard to Autonomous Agent
 
@@ -216,7 +216,7 @@ The dashboard supports German and English. Click the language toggle (DE/EN) in 
 
 ## API Endpoints
 
-42+ REST endpoints, grouped into 6 modules:
+50+ REST endpoints, grouped into 7 modules:
 
 | Module | Endpoints | Highlights |
 |---|---|---|
@@ -224,6 +224,7 @@ The dashboard supports German and English. Click the language toggle (DE/EN) in 
 | **Analytics** | 13 | Benchmark, correlation, risk, dividends, heatmap |
 | **AI Advisor** | 8 | Trade evaluation, chat, backtest, score trends |
 | **Refresh** | 8 | Granular updates (prices, scores, reports) |
+| **Shadow Agent** | 8 | Shadow portfolio, trades, performance, config |
 | **Demo** | 3 | Demo portfolio activate/deactivate |
 | **Streaming** | 1 | SSE real-time prices |
 
@@ -290,6 +291,7 @@ GCP_PROJECT_ID=...
 | Job | Schedule | Function |
 |-----|----------|----------|
 | Full Analysis | 16:15 | Refresh + Scoring + AI Report |
+| Shadow Agent | Mon-Fri 17:00 | Autonomous paper-trading cycle (Gemini Pro) |
 | Intraday Prices | Every 15 min (Mon-Fri) | yFinance Batch |
 | Weekly Digest | Friday 22:30 | Weekly AI summary |
 | News Curator | 09, 13, 17, 21h (Mon-Fri) | Portfolio news alerts (Gemini Flash) |
@@ -303,7 +305,7 @@ FinanceBro/
 ├── config.py            # Pydantic Settings v2
 ├── models.py            # 31 Pydantic models
 ├── state.py             # Global app state
-├── database.py          # SQLite persistence (WAL, 3 tables)
+├── database.py          # SQLite persistence (WAL, 9 tables incl. Shadow Agent)
 ├── cache_manager.py     # Memory + disk cache
 ├── logging_config.py    # structlog (JSON/Console)
 ├── Dockerfile           # Cloud Run Service container
@@ -337,6 +339,7 @@ FinanceBro/
 │   ├── data_loader.py   # Parallel batch loading
 │   ├── portfolio_builder.py # Parqet update + yFinance prices + portfolio totals
 │   ├── ai_agent.py      # Daily AI Telegram report
+│   ├── shadow_agent.py  # Autonomous Shadow Portfolio Agent (Paper Trading)
 │   ├── telegram.py      # Telegram API
 │   ├── telegram_bot.py  # Telegram bot (command handler)
 │   ├── vertex_ai.py     # Gemini client + context caching
@@ -356,12 +359,14 @@ FinanceBro/
 │   ├── analysis.py      # Analysis reports
 │   ├── analytics.py     # Extended analytics + attribution
 │   ├── demo.py          # Demo mode toggle (activate/deactivate/status)
+│   ├── shadow_portfolio.py # Shadow Portfolio Agent API (8 endpoints)
 │   ├── parqet_oauth.py  # OAuth2 PKCE
 │   ├── streaming.py     # SSE price stream
 │   └── telegram.py      # Telegram webhook (with secret token)
 ├── static/
 │   ├── index.html       # Dashboard UI
-│   ├── app.js           # Frontend logic
-│   └── styles.css       # Styling
-└── tests/               # 368+ pytest tests (21 test files)
+│   ├── app.js           # Frontend logic (~3400 LOC)
+│   ├── translations.js  # i18n system (225 keys, DE/EN)
+│   └── styles.css       # Design system (~3800 LOC, Dark/Light Mode)
+└── tests/               # 391 pytest tests (22 test files)
 ```

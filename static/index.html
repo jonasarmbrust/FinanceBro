@@ -500,16 +500,16 @@
             <div class="shadow-header">
                 <div class="shadow-title-row">
                     <div>
-                        <h2 class="section-title">🤖 Shadow Portfolio Agent</h2>
-                        <p class="shadow-subtitle">Autonomer AI-Agent der selbstständig ein fiktives Portfolio verwaltet</p>
+                        <h2 class="section-title" data-i18n="shadowTitle">🤖 Shadow Portfolio Agent</h2>
+                        <p class="shadow-subtitle" data-i18n="shadowSubtitle">Autonomer AI-Agent der selbstständig ein fiktives Portfolio verwaltet</p>
                     </div>
                     <div class="shadow-actions">
                         <button class="shadow-run-btn" id="shadowRunBtn" onclick="runShadowAgent()">
                             <i data-lucide="play"></i>
-                            <span class="shadow-btn-text">Agent starten</span>
-                            <span class="shadow-btn-loading" style="display:none;">⏳ Läuft...</span>
+                            <span class="shadow-btn-text" data-i18n="shadowStartAgent">Agent starten</span>
+                            <span class="shadow-btn-loading" style="display:none;" data-i18n="shadowRunning">⏳ Läuft...</span>
                         </button>
-                        <button class="shadow-reset-btn" id="shadowResetBtn" onclick="resetShadowPortfolio()" title="Portfolio zurücksetzen">
+                        <button class="shadow-reset-btn" id="shadowResetBtn" onclick="resetShadowPortfolio()" data-i18n-title="shadowResetTitle" title="Portfolio zurücksetzen">
                             <i data-lucide="rotate-ccw"></i>
                         </button>
                     </div>
@@ -519,21 +519,21 @@
             <!-- Shadow KPI Row -->
             <div class="shadow-kpi-row" id="shadowKpiRow">
                 <div class="shadow-kpi-card">
-                    <span class="shadow-kpi-label">Gesamtwert</span>
+                    <span class="shadow-kpi-label" data-i18n="shadowKpiTotal">Gesamtwert</span>
                     <span class="shadow-kpi-value" id="shadowTotalValue">—</span>
                 </div>
                 <div class="shadow-kpi-card">
-                    <span class="shadow-kpi-label">P&amp;L gesamt</span>
+                    <span class="shadow-kpi-label" data-i18n="shadowKpiPnl">P&amp;L gesamt</span>
                     <span class="shadow-kpi-value" id="shadowPnl">—</span>
                     <span class="shadow-kpi-sub" id="shadowPnlPct"></span>
                 </div>
                 <div class="shadow-kpi-card">
-                    <span class="shadow-kpi-label">Cash</span>
+                    <span class="shadow-kpi-label" data-i18n="shadowKpiCash">Cash</span>
                     <span class="shadow-kpi-value" id="shadowCash">—</span>
                     <span class="shadow-kpi-sub" id="shadowCashPct"></span>
                 </div>
                 <div class="shadow-kpi-card">
-                    <span class="shadow-kpi-label">Positionen</span>
+                    <span class="shadow-kpi-label" data-i18n="shadowKpiPositions">Positionen</span>
                     <span class="shadow-kpi-value" id="shadowPositions">—</span>
                 </div>
             </div>
@@ -545,7 +545,7 @@
                     <!-- Performance Chart -->
                     <div class="chart-card shadow-chart-card">
                         <div class="chart-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-                            <h3 class="chart-title" style="margin:0;">📈 Shadow vs. Echtes Portfolio</h3>
+                            <h3 class="chart-title" style="margin:0;" data-i18n="shadowChartTitle">📈 Shadow vs. Echtes Portfolio</h3>
                             <div class="filter-buttons">
                                 <button class="filter-btn" onclick="loadShadowPerformanceChart(30, this)">1M</button>
                                 <button class="filter-btn active" onclick="loadShadowPerformanceChart(90, this)">3M</button>
@@ -559,18 +559,18 @@
 
                     <!-- Shadow Positions Table -->
                     <div class="table-card shadow-positions-card">
-                        <h3 class="table-title">📋 Shadow-Positionen</h3>
+                        <h3 class="table-title" data-i18n="shadowTableTitle">📋 Shadow-Positionen</h3>
                         <div class="table-responsive">
                             <table class="portfolio-table" id="shadowPositionsTable">
                                 <thead>
                                     <tr>
-                                        <th>Aktie</th>
-                                        <th>Stk.</th>
-                                        <th>Kurs (EUR)</th>
-                                        <th>Wert</th>
-                                        <th>Gewicht</th>
-                                        <th>P&amp;L</th>
-                                        <th>Sektor</th>
+                                        <th data-i18n="shadowTableHeaderStock">Aktie</th>
+                                        <th data-i18n="shadowTableHeaderShares">Stk.</th>
+                                        <th data-i18n="shadowTableHeaderPrice">Kurs (EUR)</th>
+                                        <th data-i18n="shadowTableHeaderValue">Wert</th>
+                                        <th data-i18n="shadowTableHeaderWeight">Gewicht</th>
+                                        <th data-i18n="shadowTableHeaderPnl">P&amp;L</th>
+                                        <th data-i18n="shadowTableHeaderSector">Sektor</th>
                                     </tr>
                                 </thead>
                                 <tbody id="shadowPositionsBody"></tbody>
@@ -578,7 +578,7 @@
                         </div>
                         <div class="shadow-empty" id="shadowPositionsEmpty" style="display:none;">
                             <i data-lucide="inbox"></i>
-                            <p>Noch keine Positionen — Agent starten um zu initialisieren.</p>
+                            <p data-i18n="shadowEmptyPositions">Noch keine Positionen — Agent starten um zu initialisieren.</p>
                         </div>
                     </div>
                 </div>
@@ -589,16 +589,16 @@
                     <div class="chart-card shadow-decision-card" id="shadowLastDecision" style="display:none;">
                         <div class="shadow-decision-header">
                             <i data-lucide="sparkles"></i>
-                            <h3 class="chart-title" style="margin:0;">Letzter AI-Entscheid</h3>
+                            <h3 class="chart-title" style="margin:0;" data-i18n="shadowLastDecision">Letzter AI-Entscheid</h3>
                         </div>
                         <div class="shadow-decision-body" id="shadowDecisionBody"></div>
                     </div>
 
                     <!-- Transaktionshistorie -->
                     <div class="chart-card shadow-tx-card">
-                        <h3 class="chart-title">🔄 Transaktionshistorie</h3>
+                        <h3 class="chart-title" data-i18n="shadowTransactions">🔄 Transaktionshistorie</h3>
                         <div class="shadow-tx-list" id="shadowTxList">
-                            <div class="shadow-loading">Wird geladen...</div>
+                            <div class="shadow-loading" data-i18n="shadowLoading">Wird geladen...</div>
                         </div>
                     </div>
                 </div>
@@ -610,11 +610,11 @@
                     <div class="shadow-config-title-row">
                         <div style="display:flex;align-items:center;gap:0.75rem;">
                             <i data-lucide="settings-2" style="color:var(--shadow-accent);width:20px;height:20px;"></i>
-                            <h3 class="chart-title" style="margin:0;">⚙️ Agenten-Konfiguration</h3>
-                            <span class="shadow-config-badge" id="shadowConfigBadge">Standard</span>
+                            <h3 class="chart-title" style="margin:0;" data-i18n="shadowConfigTitle">⚙️ Agenten-Konfiguration</h3>
+                            <span class="shadow-config-badge" id="shadowConfigBadge" data-i18n="shadowConfigBadge">Standard</span>
                         </div>
                         <div style="display:flex;align-items:center;gap:0.75rem;">
-                            <span style="font-size:0.8rem;color:var(--text-muted);">Konfiguration bleibt nach Reset erhalten</span>
+                            <span style="font-size:0.8rem;color:var(--text-muted);" data-i18n="shadowConfigDesc">Konfiguration bleibt nach Reset erhalten</span>
                             <i data-lucide="chevron-down" id="shadowConfigChevron" style="color:var(--text-muted);transition:transform 0.3s;"></i>
                         </div>
                     </div>
@@ -623,36 +623,36 @@
                 <div class="shadow-config-body" id="shadowConfigBody" style="display:none;">
                     <!-- Strategy Mode -->
                     <div class="shadow-config-section">
-                        <h4 class="shadow-config-section-title">🎯 Strategie-Modus</h4>
+                        <h4 class="shadow-config-section-title" data-i18n="shadowStrategyMode">🎯 Strategie-Modus</h4>
                         <div class="shadow-strategy-btns">
                             <button class="shadow-strategy-btn" data-mode="conservative" onclick="setShadowStrategy('conservative', this)">
                                 <i data-lucide="shield"></i>
-                                <span class="shadow-strategy-label">Konservativ</span>
-                                <span class="shadow-strategy-desc">Viel Cash, nur Score &gt;70, stabile Sektoren</span>
+                                <span class="shadow-strategy-label" data-i18n="shadowStratConsLabel">Konservativ</span>
+                                <span class="shadow-strategy-desc" data-i18n="shadowStratConsDesc">Viel Cash, nur Score &gt;70, stabile Sektoren</span>
                             </button>
                             <button class="shadow-strategy-btn active" data-mode="balanced" onclick="setShadowStrategy('balanced', this)">
                                 <i data-lucide="scale"></i>
-                                <span class="shadow-strategy-label">Ausgewogen</span>
-                                <span class="shadow-strategy-desc">Wachstum + Sicherheit, Regeln strikt</span>
+                                <span class="shadow-strategy-label" data-i18n="shadowStratBalLabel">Ausgewogen</span>
+                                <span class="shadow-strategy-desc" data-i18n="shadowStratBalDesc">Wachstum + Sicherheit, Regeln strikt</span>
                             </button>
                             <button class="shadow-strategy-btn" data-mode="aggressive" onclick="setShadowStrategy('aggressive', this)">
                                 <i data-lucide="zap"></i>
-                                <span class="shadow-strategy-label">Aggressiv</span>
-                                <span class="shadow-strategy-desc">Risikofreudig, weniger Cash, hohe Gewichtungen</span>
+                                <span class="shadow-strategy-label" data-i18n="shadowStratAggLabel">Aggressiv</span>
+                                <span class="shadow-strategy-desc" data-i18n="shadowStratAggDesc">Risikofreudig, weniger Cash, hohe Gewichtungen</span>
                             </button>
                         </div>
                     </div>
 
                     <!-- Rules Grid -->
                     <div class="shadow-config-section">
-                        <h4 class="shadow-config-section-title">📏 Portfolio-Regeln</h4>
+                        <h4 class="shadow-config-section-title" data-i18n="shadowRulesTitle">📏 Portfolio-Regeln</h4>
                         <div class="shadow-config-grid">
 
                             <!-- Max Positionen -->
                             <div class="shadow-config-row">
                                 <div class="shadow-config-label">
-                                    <span>Max. Positionen</span>
-                                    <small>Wie viele Aktien darf das Portfolio maximal halten</small>
+                                    <span data-i18n="shadowRuleMaxPos">Max. Positionen</span>
+                                    <small data-i18n="shadowRuleMaxPosDesc">Wie viele Aktien darf das Portfolio maximal halten</small>
                                 </div>
                                 <div class="shadow-config-control">
                                     <input type="range" class="shadow-slider" id="cfgMaxPositions"
@@ -668,8 +668,8 @@
                             <!-- Max Gewichtung -->
                             <div class="shadow-config-row">
                                 <div class="shadow-config-label">
-                                    <span>Max. Gewichtung / Position</span>
-                                    <small>Maximaler Anteil einer einzelnen Position am Gesamtportfolio</small>
+                                    <span data-i18n="shadowRuleMaxWeight">Max. Gewichtung / Position</span>
+                                    <small data-i18n="shadowRuleMaxWeightDesc">Maximaler Anteil einer einzelnen Position am Gesamtportfolio</small>
                                 </div>
                                 <div class="shadow-config-control">
                                     <input type="range" class="shadow-slider" id="cfgMaxWeight"
@@ -685,8 +685,8 @@
                             <!-- Mind. Cash-Reserve -->
                             <div class="shadow-config-row">
                                 <div class="shadow-config-label">
-                                    <span>Mind. Cash-Reserve</span>
-                                    <small>Dieser Cash-Anteil bleibt immer unberührt (Sicherheitspuffer)</small>
+                                    <span data-i18n="shadowRuleMinCash">Mind. Cash-Reserve</span>
+                                    <small data-i18n="shadowRuleMinCashDesc">Dieser Cash-Anteil bleibt immer unberührt (Sicherheitspuffer)</small>
                                 </div>
                                 <div class="shadow-config-control">
                                     <input type="range" class="shadow-slider" id="cfgMinCash"
@@ -702,8 +702,8 @@
                             <!-- Min. Trade-Volumen -->
                             <div class="shadow-config-row">
                                 <div class="shadow-config-label">
-                                    <span>Min. Trade-Volumen</span>
-                                    <small>Kleiner Trades werden ignoriert (Transaktionskosten-Simulation)</small>
+                                    <span data-i18n="shadowRuleMinTrade">Min. Trade-Volumen</span>
+                                    <small data-i18n="shadowRuleMinTradeDesc">Kleiner Trades werden ignoriert (Transaktionskosten-Simulation)</small>
                                 </div>
                                 <div class="shadow-config-control">
                                     <input type="range" class="shadow-slider" id="cfgMinTrade"
@@ -719,8 +719,8 @@
                             <!-- Max Trades/Zyklus -->
                             <div class="shadow-config-row">
                                 <div class="shadow-config-label">
-                                    <span>Max. Trades pro Zyklus</span>
-                                    <small>Begrenzt wie viele Trades der Agent pro Tag ausführen darf</small>
+                                    <span data-i18n="shadowRuleMaxTrades">Max. Trades pro Zyklus</span>
+                                    <small data-i18n="shadowRuleMaxTradesDesc">Begrenzt wie viele Trades der Agent pro Tag ausführen darf</small>
                                 </div>
                                 <div class="shadow-config-control">
                                     <input type="range" class="shadow-slider" id="cfgMaxTrades"
@@ -736,8 +736,8 @@
                             <!-- Max Sektor-Konzentration -->
                             <div class="shadow-config-row">
                                 <div class="shadow-config-label">
-                                    <span>Max. Sektor-Konzentration</span>
-                                    <small>Verhindert Klumpenrisiken in einem einzelnen Sektor</small>
+                                    <span data-i18n="shadowRuleMaxSector">Max. Sektor-Konzentration</span>
+                                    <small data-i18n="shadowRuleMaxSectorDesc">Verhindert Klumpenrisiken in einem einzelnen Sektor</small>
                                 </div>
                                 <div class="shadow-config-control">
                                     <input type="range" class="shadow-slider" id="cfgMaxSector"
@@ -753,8 +753,8 @@
                             <!-- Min. Buy-Score -->
                             <div class="shadow-config-row">
                                 <div class="shadow-config-label">
-                                    <span>Mind. Score für Käufe</span>
-                                    <small>Nur Aktien mit mindestens diesem Score werden gekauft</small>
+                                    <span data-i18n="shadowRuleMinScore">Mindest-Score für Kauf</span>
+                                    <small data-i18n="shadowRuleMinScoreDesc">Aktiengüte-Schwellenwert für Neukäufe</small>
                                 </div>
                                 <div class="shadow-config-control">
                                     <input type="range" class="shadow-slider" id="cfgMinScore"
@@ -773,11 +773,11 @@
                     <!-- Action Bar -->
                     <div class="shadow-config-actions">
                         <button class="shadow-config-reset-btn" onclick="resetShadowConfig()">
-                            <i data-lucide="rotate-ccw"></i> Auf Standard zurücksetzen
+                            <i data-lucide="rotate-ccw"></i> <span data-i18n="shadowRestoreDefaults">Standard wiederherstellen</span>
                         </button>
                         <button class="shadow-config-save-btn" id="shadowConfigSaveBtn" onclick="saveShadowConfig()">
                             <i data-lucide="save"></i>
-                            <span id="shadowConfigSaveTxt">Konfiguration speichern</span>
+                            <span id="shadowConfigSaveTxt" data-i18n="shadowSaveConfig">Konfiguration speichern</span>
                         </button>
                     </div>
                 </div>

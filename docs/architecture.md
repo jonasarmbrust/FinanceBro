@@ -72,11 +72,12 @@ FinanceBro/
 ├── middleware/
 │   └── auth.py             # Basic Auth Middleware (Passwortschutz)
 │
-├── static/                 # Frontend (HTML/JS/CSS)
+├── static/                 # Frontend (HTML/JS/CSS + i18n DE/EN)
 │   ├── index.html          # Modular HTML: Header, Tabs, Slide-Over, Bottom Nav
-│   ├── app.js              # ~3100 LOC: Rendering, SSE, Theme, Toast, Heatmap
-│   └── styles.css          # ~3660 LOC: Design System, Dark/Light Mode, Glassmorphism
-└── tests/                  # 368+ pytest Tests (21 Testdateien)
+│   ├── app.js              # ~3400 LOC: Rendering, SSE, Theme, Toast, Heatmap, Shadow Agent
+│   ├── translations.js     # i18n System (225 Keys, DE/EN) — t() Funktion + data-i18n
+│   └── styles.css          # ~3800 LOC: Design System, Dark/Light Mode, Glassmorphism
+└── tests/                  # 391 pytest Tests (22 Testdateien)
 ```
 
 ## Frontend-Architektur
@@ -286,9 +287,44 @@ Kosten:  0 €/Monat (Free Tier)
 | Job | Zeit | Funktion |
 |-----|------|----------|
 | Full Analyse | 16:15 CET | Refresh + Scoring + AI Report |
+| Shadow Agent | Mo-Fr 17:00 CET | Autonomer Paper-Trading-Zyklus (Gemini Pro) |
 | News-Kurator | Mo-Fr 09, 13, 17, 21 | Proaktive Portfolio-News-Alerts |
 | Intraday Kurse | alle 15min Mo-Fr 8-22h | yFinance Batch |
 | Weekly Digest | Freitag 22:30 | KI-Zusammenfassung |
 | Cloud Run Job | 15:45 CET (Cloud Scheduler) | Full Refresh → Telegram Report |
 
 > **Wichtig:** Der APScheduler läuft in-process im Cloud Run Container. Ohne den `financebro-keepalive` Cloud Scheduler Job würde der Container bei Inaktivität abschalten und alle geplanten Jobs stoppen.
+
+## Shadow Portfolio Agent
+
+Autonomer AI-Agent der ein fiktives Paper-Trading-Portfolio verwaltet:
+
+```
+Perception → Echtes Portfolio + Marktdaten + Shadow-State lesen
+     ↓
+Reasoning  → Gemini 2.5 Pro (Function Calling) evaluiert Kandidaten
+     ↓
+Action     → Fiktive Trades in Shadow-DB ausführen (Buy/Sell/Hold)
+     ↓
+Reporting  → Performance-Tracking, Decision-Log, Telegram-Report
+```
+
+### Shadow SQLite-Schema (6 Tabellen)
+
+| Tabelle | Beschreibung |
+|---------|-------------|
+| `shadow_portfolio` | Aktuelle Positionen (Ticker, Shares, Avg Cost, Sektor) |
+| `shadow_transactions` | Kauf-/Verkaufshistorie mit AI-Begründung |
+| `shadow_performance` | Tägliche Performance-Snapshots (Shadow vs. Real) |
+| `shadow_decision_log` | AI-Entscheidungsprotokolle pro Zyklus |
+| `shadow_meta` | Key-Value Store (Init-Status, Cash, Startkapital) |
+| Config (in shadow_meta) | JSON-gespeicherte Agenten-Regeln (Strategy, Limits) |
+
+### Agenten-Regeln (konfigurierbar)
+- Max 20 Positionen, Max 10% Gewichtung/Position
+- Min 5% Cash-Reserve, Min 500 EUR Trade-Volumen
+- Max 3 Trades/Zyklus, Max 35% Sektor-Konzentration
+- 3 Strategie-Modi: Conservative, Balanced, Aggressive
+
+### Shadow API (`routes/shadow_portfolio.py`)
+8 Endpoints für Dashboard-Integration: Portfolio-Stand, Agent-Run, Transactions, Performance, Decision-Log, Reset, Config (GET/POST).

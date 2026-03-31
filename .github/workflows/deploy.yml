@@ -70,22 +70,24 @@ jobs:
             --image=${{ env.IMAGE }}:${{ github.sha }} \
             --region=${{ env.REGION }} \
             --allow-unauthenticated \
-            --memory=512Mi \
+            --memory=1024Mi \
             --cpu=1 \
+            --cpu-boost \
+            --no-cpu-throttling \
             --min-instances=0 \
             --max-instances=1 \
             --timeout=300 \
             --update-env-vars="ENVIRONMENT=production" \
             --update-env-vars="GCP_PROJECT_ID=${{ env.PROJECT_ID }}" \
             --update-env-vars="FMP_API_KEY=${{ secrets.FMP_API_KEY }}" \
-            --update-env-vars="FINNHUB_API_KEY=${{ secrets.FINNHUB_API_KEY }}" \
             --update-env-vars="TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" \
             --update-env-vars="TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            --update-env-vars="TELEGRAM_WEBHOOK_SECRET=${{ secrets.TELEGRAM_WEBHOOK_SECRET }}" \
             --update-env-vars="GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" \
             --update-env-vars="PARQET_PORTFOLIO_ID=${{ secrets.PARQET_PORTFOLIO_ID }}" \
-            --update-env-vars="DAILY_REFRESH_TIME=06:00" \
+            --update-env-vars="DASHBOARD_USER=${{ secrets.DASHBOARD_USER }}" \
+            --update-env-vars="DASHBOARD_PASSWORD=${{ secrets.DASHBOARD_PASSWORD }}" \
             --update-env-vars="PRICE_UPDATE_INTERVAL_MIN=30" \
-            --update-env-vars="AI_AGENT_TIME=15:50" \
             --quiet
 
       - name: Show service URL

@@ -17,6 +17,7 @@ Alle Endpoints erfordern Basic Auth (`DASHBOARD_USER` / `DASHBOARD_PASSWORD`), s
 | GET | `/api/sectors` | Sektor-Allokation |
 | GET | `/api/fear-greed` | Fear & Greed Index |
 | GET | `/api/status` | System-Status |
+| POST | `/api/portfolio/csv` | CSV Portfolio Import (Upload) |
 
 ## Demo Mode (`routes/demo.py`)
 
@@ -70,6 +71,19 @@ Alle Endpoints erfordern Basic Auth (`DASHBOARD_USER` / `DASHBOARD_PASSWORD`), s
 | GET | `/api/portfolio/history-detail` | Detaillierte Portfolio-Historie (Einzelaktien) |
 | GET | `/api/performance` | Performance-Kennzahlen |
 
+## Shadow Portfolio Agent (`routes/shadow_portfolio.py`)
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| GET | `/api/shadow-portfolio` | Aktueller Shadow-Portfolio-Stand |
+| POST | `/api/shadow-portfolio/run` | Agent-Zyklus manuell auslösen (30-90s) |
+| GET | `/api/shadow-portfolio/transactions` | Transaktionshistorie (limit: 50) |
+| GET | `/api/shadow-portfolio/performance` | Performance-Verlauf (days: 90) |
+| GET | `/api/shadow-portfolio/decision-log` | AI-Entscheidungslog |
+| POST | `/api/shadow-portfolio/reset` | Portfolio zurücksetzen (Config bleibt) |
+| GET | `/api/shadow-portfolio/config` | Agenten-Konfiguration lesen |
+| POST | `/api/shadow-portfolio/config` | Agenten-Konfiguration speichern |
+
 ## Streaming (`routes/streaming.py`)
 
 | Methode | Pfad | Beschreibung |
@@ -80,4 +94,4 @@ Alle Endpoints erfordern Basic Auth (`DASHBOARD_USER` / `DASHBOARD_PASSWORD`), s
 
 | Methode | Pfad | Beschreibung |
 |---|---|---|
-| POST | `/telegram/{secret}` | Telegram Bot Webhook (Secret-Token im Pfad) |
+| POST | `/api/telegram/webhook/{secret}` | Telegram Bot Webhook (Secret-Token im Pfad) |

@@ -589,8 +589,6 @@ async def _call_gemini_agent(context: dict, candidates: list[dict]) -> dict:
 
     config = {
         "tools": [Tool(function_declarations=tool_declarations)],
-        "response_mime_type": "application/json",
-        "response_schema": SHADOW_DECISION_SCHEMA,
         "system_instruction": system_prompt,
     }
 

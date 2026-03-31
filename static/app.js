@@ -3352,7 +3352,7 @@ async function loadShadowPerformanceChart(days, btn) {
         if (shadowPerformanceChartInstance) shadowPerformanceChartInstance.destroy();
 
         if (!shadowPerf.length && !realPerf.length) {
-            ctx.parentElement.innerHTML = '<div class="shadow-loading">Noch keine Performance-Daten — Agent starten um zu beginnen.</div>';
+            ctx.parentElement.innerHTML = `<div class="shadow-loading">${t('shadowEmptyChart')}</div>`;
             return;
         }
 
@@ -3575,17 +3575,17 @@ async function runShadowAgent() {
         if (btnLoading) btnLoading.style.display = 'inline';
     }
 
-    showToast('🤖 Shadow Agent läuft... (30-90 Sekunden)', 'info');
+    showToast(t('shadowAgentRunningToast'), 'info');
 
     try {
         const res = await fetch('/api/shadow-portfolio/run', { method: 'POST' });
         const result = await res.json();
 
         if (result.error) {
-            showToast(`❌ Agent-Fehler: ${result.error}`, 'error');
+            showToast(`${t('shadowAgentErrorToast')}${result.error}`, 'error');
         } else {
             const tradeCount = result.trades_executed?.length || 0;
-            showToast(`✅ Shadow Agent: ${tradeCount} Trade(s) ausgeführt`, 'success');
+            showToast(`${t('shadowAgentSuccessToast')} ${tradeCount}`, 'success');
 
             // Reload all shadow data
             await loadShadowPortfolio();
@@ -3594,7 +3594,7 @@ async function runShadowAgent() {
             loadShadowPerformanceChart(90);
         }
     } catch (e) {
-        showToast('❌ Agent-Aufruf fehlgeschlagen', 'error');
+        showToast(t('shadowAgentFailToast'), 'error');
     } finally {
         if (btn) {
             btn.disabled = false;
@@ -3610,17 +3610,17 @@ async function runShadowAgent() {
  * Resets the Shadow Portfolio (after confirmation).
  */
 async function resetShadowPortfolio() {
-    if (!confirm('Shadow-Portfolio wirklich zurücksetzen? Alle Positionen und Transaktionen werden gelöscht.\n\n💡 Die Konfiguration (Agenten-Regeln) bleibt erhalten.')) return;
+    if (!confirm(t('shadowResetConfirm'))) return;
 
     try {
         const res = await fetch('/api/shadow-portfolio/reset', { method: 'POST' });
         const result = await res.json();
         if (result.status === 'ok') {
-            showToast('🗑️ Shadow-Portfolio zurückgesetzt', 'success');
+            showToast(t('shadowResetSuccess'), 'success');
             shadowData = null;
             renderShadowKpis({ total_value_eur: 0, pnl_eur: 0, pnl_pct: 0, cash_eur: 0, cash_pct: 0, num_positions: 0 });
             renderShadowPositions([]);
-            document.getElementById('shadowTxList').innerHTML = '<div class="shadow-loading">Noch keine Transaktionen.</div>';
+            document.getElementById('shadowTxList').innerHTML = `<div class="shadow-loading">${t('shadowEmptyTransactions')}</div>`;
             document.getElementById('shadowLastDecision').style.display = 'none';
             if (shadowPerformanceChartInstance) {
                 shadowPerformanceChartInstance.destroy();
@@ -3628,7 +3628,7 @@ async function resetShadowPortfolio() {
             }
         }
     } catch (e) {
-        showToast('❌ Reset fehlgeschlagen', 'error');
+        showToast(t('shadowResetFail'), 'error');
     }
 }
 
@@ -3728,8 +3728,8 @@ function _applyShadowConfigToUI(config) {
     // Badge
     const badge = document.getElementById('shadowConfigBadge');
     if (badge) {
-        const modeLabel = { conservative: 'Konservativ', balanced: 'Ausgewogen', aggressive: 'Aggressiv' };
-        badge.textContent = modeLabel[_shadowCurrentMode] || 'Standard';
+        const modeLabel = { conservative: t('shadowModeCons'), balanced: t('shadowModeBal'), aggressive: t('shadowModeAgg') };
+        badge.textContent = modeLabel[_shadowCurrentMode] || t('shadowModeDefault');
     }
 
     if (window.lucide) lucide.createIcons();
@@ -3741,7 +3741,7 @@ function _applyShadowConfigToUI(config) {
 async function saveShadowConfig() {
     const btn = document.getElementById('shadowConfigSaveBtn');
     const txt = document.getElementById('shadowConfigSaveTxt');
-    if (btn) { btn.disabled = true; if (txt) txt.textContent = 'Speichert...'; }
+    if (btn) { btn.disabled = true; if (txt) txt.textContent = t('shadowSaveSaving'); }
 
     const config = {
         strategy_mode: _shadowCurrentMode,
@@ -3763,15 +3763,15 @@ async function saveShadowConfig() {
         const result = await res.json();
 
         if (result.status === 'ok') {
-            showToast('✅ Konfiguration gespeichert — gilt ab dem nächsten Zyklus', 'success');
+            showToast(t('shadowSaveSuccess'), 'success');
             _applyShadowConfigToUI(result.config);
         } else {
-            showToast('❌ Speichern fehlgeschlagen', 'error');
+            showToast(t('shadowSaveFail'), 'error');
         }
     } catch (e) {
-        showToast('❌ Netzwerkfehler beim Speichern', 'error');
+        showToast(t('shadowSaveNetFail'), 'error');
     } finally {
-        if (btn) { btn.disabled = false; if (txt) txt.textContent = 'Konfiguration speichern'; }
+        if (btn) { btn.disabled = false; if (txt) txt.textContent = t('shadowSaveConfig'); }
     }
 }
 
@@ -3779,7 +3779,7 @@ async function saveShadowConfig() {
  * Resets config to defaults (calls API with empty object to trigger defaults).
  */
 async function resetShadowConfig() {
-    if (!confirm('Konfiguration auf Standardwerte zurücksetzen?')) return;
+    if (!confirm(t('shadowResetConfigConfirm'))) return;
 
     // Default values
     const defaults = {
@@ -3801,11 +3801,11 @@ async function resetShadowConfig() {
         });
         const result = await res.json();
         if (result.status === 'ok') {
-            showToast('🔄 Konfiguration zurückgesetzt', 'success');
+            showToast(t('shadowResetConfigSuccess'), 'success');
             _applyShadowConfigToUI(result.config);
         }
     } catch (e) {
-        showToast('❌ Fehler beim Zurücksetzen', 'error');
+        showToast(t('shadowResetConfigFail'), 'error');
     }
 }
 
