@@ -5,6 +5,7 @@ geteilt wird. Durch die Zentralisierung wird vermieden, dass mehrere
 Module inkompatible Kopien derselben Daten halten.
 """
 import asyncio
+from typing import Optional
 from zoneinfo import ZoneInfo
 
 
@@ -36,3 +37,25 @@ refresh_progress: dict = {
 # Lock um parallele Refreshes zu verhindern
 refresh_lock = asyncio.Lock()
 
+
+# ─── Typed Accessors ────────────────────────────────────────
+# Bevorzuge diese Funktionen gegenüber direktem dict-Zugriff.
+
+def get_summary() -> Optional["PortfolioSummary"]:  # noqa: F821
+    """Read-only Zugriff auf das aktuelle PortfolioSummary."""
+    return portfolio_data.get("summary")
+
+
+def set_summary(summary) -> None:
+    """Setzt das PortfolioSummary (nur aus Refresh-Pipeline aufrufen)."""
+    portfolio_data["summary"] = summary
+
+
+def is_refreshing() -> bool:
+    """Prüft ob gerade ein Refresh läuft."""
+    return portfolio_data.get("refreshing", False)
+
+
+def set_refreshing(state: bool) -> None:
+    """Setzt den Refresh-Status."""
+    portfolio_data["refreshing"] = state

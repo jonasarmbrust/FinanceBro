@@ -378,8 +378,22 @@ app.include_router(shadow_portfolio_router)
 # Health Check (für Cloud Run Startup/Liveness Probes)
 @app.get("/health")
 async def health():
-    """Sofortige Antwort — unabhängig vom Datenladestand."""
-    return {"status": "ok"}
+    """Erweiterte Health-Prüfung: DB-Konnektivität + Portfolio-Status."""
+    from state import portfolio_data
+    db_ok = False
+    try:
+        from database import _get_conn
+        _get_conn().execute("SELECT 1").fetchone()
+        db_ok = True
+    except Exception:
+        pass
+    summary = portfolio_data.get("summary")
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "db": db_ok,
+        "portfolio_loaded": summary is not None,
+        "positions": summary.num_positions if summary else 0,
+    }
 
 if __name__ == "__main__":
     import os

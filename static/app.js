@@ -572,8 +572,6 @@ async function openStockDetail(ticker) {
 
     const pos = stock.position;
     const score = stock.score;
-    const fd = stock.fundamentals;
-    const analyst = stock.analyst;
 
     // Header
     document.getElementById('modalTitle').innerHTML = `
@@ -588,9 +586,41 @@ async function openStockDetail(ticker) {
         </span>
     `;
 
-    // ---- Distribute content into panel tabs ----
-    // Overview tab: Data sources + Score breakdown + Price chart + Score history + Summary
-    let overviewHTML = '';
+    // Build tab content via sub-renderers
+    const overviewHTML = _renderOverviewTab(stock, pos, score);
+    const fundHTML = _renderFundamentalsTab(stock) || '<div class="empty-state">' + t('noFundData') + '</div>';
+    const techHTML = _renderTechnicalTab(stock) || '<div class="empty-state">' + t('noTechData') + '</div>';
+    const newsHTML = '<div id="stockNewsContainer"><div class="loading-text">News werden geladen...</div></div>';
+
+    // Write to panel tabs
+    document.getElementById('panelContent-overview').innerHTML = overviewHTML;
+    document.getElementById('panelContent-fundamentals').innerHTML = fundHTML;
+    document.getElementById('panelContent-technical').innerHTML = techHTML;
+    document.getElementById('panelContent-news').innerHTML = newsHTML;
+
+    // Reset panel tabs to first tab
+    document.querySelectorAll('.panel-tab').forEach((t, i) => t.classList.toggle('active', i === 0));
+    document.querySelectorAll('.panel-tab-content').forEach((c, i) => c.classList.toggle('active', i === 0));
+
+    // Open slide-over panel
+    document.getElementById('stockPanelOverlay').classList.add('active');
+    setTimeout(() => {
+        document.getElementById('stockPanel').classList.add('open');
+    }, 10);
+
+    // Auto-load charts + news
+    loadStockChart(pos.ticker, '3month');
+    loadScoreHistory(pos.ticker);
+    loadStockNews(pos.ticker);
+    if (window.lucide) lucide.createIcons();
+}
+
+
+// ─── Stock Detail Sub-Renderers ──────────────────────────────
+
+function _renderOverviewTab(stock, pos, score) {
+    let html = '';
+
     // Data Source Status
     const ds = stock.data_sources || {};
     const srcItems = [
@@ -600,7 +630,7 @@ async function openStockDetail(ticker) {
         { key: 'yfinance', label: 'Yahoo' },
         { key: 'fear_greed', label: 'Fear&Greed' },
     ];
-    overviewHTML += `
+    html += `
         <div class="modal-section">
             <div class="modal-section-title">Datenquellen</div>
             <div class="source-status-row">
@@ -627,7 +657,7 @@ async function openStockDetail(ticker) {
             { label: 'Insider', value: bd.insider_score || 0, weight: '3%' },
             { label: 'ESG', value: bd.esg_score || 0, weight: '2%' },
         ];
-        overviewHTML += `
+        html += `
             <div class="modal-section">
                 <div class="modal-section-title">${t('scoreBreakdown')}</div>
                 <div class="modal-breakdown">
@@ -649,7 +679,7 @@ async function openStockDetail(ticker) {
     }
 
     // Price chart
-    overviewHTML += `
+    html += `
         <div class="modal-section">
             <div class="modal-section-title">📊 Kursverlauf</div>
             <div class="modal-chart-controls">
@@ -665,7 +695,7 @@ async function openStockDetail(ticker) {
     `;
 
     // Score-History Chart
-    overviewHTML += `
+    html += `
         <div class="modal-section">
             <div class="modal-section-title">📈 Score-Verlauf</div>
             <div style="height:140px;position:relative;">
@@ -675,22 +705,30 @@ async function openStockDetail(ticker) {
     `;
 
     if (score?.summary) {
-        overviewHTML += `
+        html += `
             <div class="modal-section">
                 <div class="modal-summary">${score.summary}</div>
             </div>
         `;
     }
 
-    // Fundamentals tab
-    let fundHTML = '';
+    return html;
+}
+
+
+function _renderFundamentalsTab(stock) {
+    let html = '';
+    const fd = stock.fundamentals;
+    const analyst = stock.analyst;
+    const pos = stock.position;
+
     if (fd) {
         const fmtPct = (v) => {
             if (v == null) return null;
             const pct = Math.abs(v) < 5 ? v * 100 : v;
             return pct.toFixed(1) + '%';
         };
-        fundHTML += `
+        html += `
             <div class="modal-section">
                 <div class="modal-section-title">Fundamentaldaten</div>
                 <div class="modal-metrics">
@@ -713,7 +751,7 @@ async function openStockDetail(ticker) {
         `;
     }
     if (analyst && analyst.num_analysts > 0) {
-        fundHTML += `
+        html += `
             <div class="modal-section">
                 <div class="modal-section-title">Analysten (${analyst.num_analysts})</div>
                 <div class="modal-metrics">
@@ -733,7 +771,7 @@ async function openStockDetail(ticker) {
     }
     const fmpRating = stock.fmp_rating;
     if (fmpRating && fmpRating.rating) {
-        fundHTML += `
+        html += `
             <div class="modal-section">
                 <div class="modal-section-title">FMP Rating</div>
                 <div class="modal-metrics">
@@ -756,7 +794,7 @@ async function openStockDetail(ticker) {
         const esgLabel = yf.esg_risk_score != null ?
             (yf.esg_risk_score <= 10 ? '🟢 Low' : yf.esg_risk_score <= 20 ? '🟢 Low' :
                 yf.esg_risk_score <= 30 ? '🟡 Medium' : yf.esg_risk_score <= 40 ? '🟠 High' : '🔴 Very High') : null;
-        fundHTML += `
+        html += `
             <div class="modal-section">
                 <div class="modal-section-title">Yahoo Finance</div>
                 <div class="modal-metrics">
@@ -773,7 +811,7 @@ async function openStockDetail(ticker) {
     // Dividend Info
     const div = stock.dividend;
     if (div && (div.yield_percent || div.annual_dividend)) {
-        fundHTML += `
+        html += `
             <div class="modal-section">
                 <div class="modal-section-title">💰 Dividende</div>
                 <div class="modal-metrics">
@@ -786,15 +824,19 @@ async function openStockDetail(ticker) {
         `;
     }
 
-    // Technical tab
-    let techHTML = '';
+    return html;
+}
+
+
+function _renderTechnicalTab(stock) {
+    let html = '';
     const tech = stock.technical;
     if (tech && (tech.rsi_14 != null || tech.sma_cross || tech.momentum_30d != null)) {
         const signalEmoji = tech.signal === 'Bullish' ? '📈' : tech.signal === 'Bearish' ? '📉' : '➡️';
         const rsiLabel = tech.rsi_14 != null ?
             (tech.rsi_14 > 70 ? t('overbought') : tech.rsi_14 < 30 ? t('oversold') : t('normal')) : null;
         const crossLabel = tech.sma_cross === 'golden' ? '🟢 Golden Cross' : tech.sma_cross === 'death' ? '🔴 Death Cross' : '➡️ Neutral';
-        techHTML += `
+        html += `
             <div class="modal-section">
                 <div class="modal-section-title">Technische Indikatoren</div>
                 <div class="modal-metrics">
@@ -815,7 +857,7 @@ async function openStockDetail(ticker) {
             (av.news_sentiment > 0.15 ? '📈 Positiv' : av.news_sentiment < -0.15 ? '📉 Negativ' : '➡️ Neutral') : null;
         const avRsiLabel = av.rsi_14 != null ?
             (av.rsi_14 > 70 ? t('overbought') : av.rsi_14 < 30 ? t('oversold') : t('normal')) : null;
-        techHTML += `
+        html += `
             <div class="modal-section">
                 <div class="modal-section-title">Alpha Vantage</div>
                 <div class="modal-metrics">
@@ -826,35 +868,8 @@ async function openStockDetail(ticker) {
             </div>
         `;
     }
-    if (!techHTML) techHTML = '<div class="empty-state">' + t('noTechData') + '</div>';
 
-    // News tab
-    let newsHTML = '<div id="stockNewsContainer"><div class="loading-text">News werden geladen...</div></div>';
-
-    // Write to panel tabs
-    document.getElementById('panelContent-overview').innerHTML = overviewHTML;
-    document.getElementById('panelContent-fundamentals').innerHTML = fundHTML || '<div class="empty-state">' + t('noFundData') + '</div>';
-    document.getElementById('panelContent-technical').innerHTML = techHTML;
-    document.getElementById('panelContent-news').innerHTML = newsHTML;
-
-    // Reset panel tabs to first tab
-    document.querySelectorAll('.panel-tab').forEach((t, i) => t.classList.toggle('active', i === 0));
-    document.querySelectorAll('.panel-tab-content').forEach((c, i) => c.classList.toggle('active', i === 0));
-
-    // Open slide-over panel
-    document.getElementById('stockPanelOverlay').classList.add('active');
-    setTimeout(() => {
-        document.getElementById('stockPanel').classList.add('open');
-    }, 10);
-
-    // Auto-load stock chart
-    loadStockChart(pos.ticker, '3month');
-    // Load score history
-    loadScoreHistory(pos.ticker);
-    // Load news
-    loadStockNews(pos.ticker);
-    // Re-create Lucide icons
-    if (window.lucide) lucide.createIcons();
+    return html;
 }
 
 function metricItem(label, value) {

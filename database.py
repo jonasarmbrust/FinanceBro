@@ -131,6 +131,12 @@ def init_db():
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+
+        -- ── Missing Indexes ──────────────────────────────────────
+        CREATE INDEX IF NOT EXISTS idx_snapshots_date ON portfolio_snapshots(date);
+        CREATE INDEX IF NOT EXISTS idx_reports_timestamp ON analysis_reports(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_shadow_perf_date ON shadow_performance(date);
+        CREATE INDEX IF NOT EXISTS idx_shadow_log_timestamp ON shadow_decision_log(timestamp);
     """)
     conn.commit()
     logger.info(f"📦 SQLite-Datenbank initialisiert: {DB_PATH}")

@@ -292,6 +292,9 @@ async def evaluate_trade_endpoint(data: dict):
         amount_eur: float (optional) — Geplanter Betrag
         extra_context: str (optional) — Externe Quellen / Analystenkommentare
     """
+    from middleware.rate_limiter import check_rate_limit
+    check_rate_limit("advisor_evaluate")
+
     ticker = data.get("ticker", "").strip().upper()
     if not ticker:
         return {"error": "Bitte einen Ticker angeben (z.B. NVDA, AAPL)"}
@@ -326,6 +329,9 @@ async def advisor_chat_endpoint(data: dict):
         message: str — Frage oder Hypothese
         history: list (optional) — Bisheriger Chat-Verlauf
     """
+    from middleware.rate_limiter import check_rate_limit
+    check_rate_limit("advisor_chat")
+
     message = data.get("message", "").strip()
     if not message:
         return {"error": "Bitte eine Nachricht eingeben."}

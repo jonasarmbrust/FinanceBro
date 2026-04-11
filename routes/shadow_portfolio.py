@@ -36,6 +36,8 @@ async def run_shadow_agent():
     Trades aus. Dauert 30-90 Sekunden (Gemini API + yFinance).
     """
     try:
+        from middleware.rate_limiter import check_rate_limit
+        check_rate_limit("shadow_run")
         from services.shadow_agent import run_shadow_agent_cycle
         result = await run_shadow_agent_cycle()
         return result
@@ -88,6 +90,8 @@ async def reset_shadow_portfolio():
     Nach dem Reset wird beim naechsten Zyklus neu initialisiert.
     """
     try:
+        from middleware.rate_limiter import check_rate_limit
+        check_rate_limit("shadow_reset")
         from database import shadow_reset
         await __import__("asyncio").to_thread(shadow_reset)
         return {"status": "ok", "message": "Shadow-Portfolio wurde zurueckgesetzt. Naechster Agent-Lauf initialisiert neu."}
