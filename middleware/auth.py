@@ -19,6 +19,7 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
     Schützt alle Routen außer:
     - /api/telegram/webhook (hat eigenes Secret-Token)
     - /health (für Cloud Run Health Checks)
+    - Requests mit gültigem SCHEDULER_API_KEY (Cloud Scheduler)
     """
 
     EXEMPT_PATHS = {"/health", "/api/telegram/webhook"}
@@ -32,6 +33,15 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         for exempt in self.EXEMPT_PATHS:
             if path.startswith(exempt):
+                return await call_next(request)
+
+        # API-Key Auth für Cloud Scheduler (Header oder Query-Parameter)
+        if settings.SCHEDULER_API_KEY:
+            api_key = (
+                request.headers.get("X-Scheduler-Key", "")
+                or request.query_params.get("api_key", "")
+            )
+            if api_key and secrets.compare_digest(api_key, settings.SCHEDULER_API_KEY):
                 return await call_next(request)
 
         # Basic Auth Header prüfen

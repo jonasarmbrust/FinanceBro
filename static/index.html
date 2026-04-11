@@ -536,6 +536,18 @@
                     <span class="shadow-kpi-label" data-i18n="shadowKpiPositions">Positionen</span>
                     <span class="shadow-kpi-value" id="shadowPositions">—</span>
                 </div>
+                <div class="shadow-kpi-card">
+                    <span class="shadow-kpi-label">🏛️ Steuern gezahlt</span>
+                    <span class="shadow-kpi-value" id="shadowTaxPaid" style="color:var(--red, #ef4444)">—</span>
+                </div>
+                <div class="shadow-kpi-card">
+                    <span class="shadow-kpi-label">📉 Verlusttopf</span>
+                    <span class="shadow-kpi-value" id="shadowLossPot" style="color:var(--yellow, #eab308)">—</span>
+                </div>
+                <div class="shadow-kpi-card">
+                    <span class="shadow-kpi-label">💵 Dividenden</span>
+                    <span class="shadow-kpi-value" id="shadowDividends" style="color:var(--green, #22c55e)">—</span>
+                </div>
             </div>
 
             <!-- Shadow Main Grid -->
@@ -564,13 +576,13 @@
                             <table class="portfolio-table" id="shadowPositionsTable">
                                 <thead>
                                     <tr>
-                                        <th data-i18n="shadowTableHeaderStock">Aktie</th>
-                                        <th data-i18n="shadowTableHeaderShares">Stk.</th>
-                                        <th data-i18n="shadowTableHeaderPrice">Kurs (EUR)</th>
-                                        <th data-i18n="shadowTableHeaderValue">Wert</th>
-                                        <th data-i18n="shadowTableHeaderWeight">Gewicht</th>
-                                        <th data-i18n="shadowTableHeaderPnl">P&amp;L</th>
-                                        <th data-i18n="shadowTableHeaderSector">Sektor</th>
+                                        <th data-i18n="name">Aktie</th>
+                                        <th data-i18n="price">Kurs</th>
+                                        <th data-i18n="costBasis">Einstand</th>
+                                        <th data-i18n="todayShort">Heute</th>
+                                        <th data-i18n="shares">Stk.</th>
+                                        <th data-i18n="value">Wert</th>
+                                        <th>P&amp;L</th>
                                     </tr>
                                 </thead>
                                 <tbody id="shadowPositionsBody"></tbody>

@@ -52,6 +52,7 @@ SHADOW_DECISION_SCHEMA = {
                     "ticker": {"type": "string"},
                     "action": {"type": "string", "enum": ["buy", "sell", "hold"]},
                     "amount_eur": {"type": "number"},
+                    "sell_all": {"type": "boolean", "description": "Wenn true, wird die gesamte Position verkauft (amount_eur wird ignoriert)."},
                     "reason": {"type": "string"},
                     "priority": {"type": "integer"},
                 },
@@ -88,10 +89,15 @@ async def run_shadow_agent_cycle() -> dict:
         return {"error": "Keine Portfolio-Daten", "status": "skipped"}
 
     # 1. Initialisierung (falls erstes Mal)
-    await _ensure_initialized(summary)
+    just_initialized = await _ensure_initialized(summary)
 
     # 2. Kurse der Shadow-Positionen aktualisieren
-    await _update_shadow_prices()
+    # Skip bei erster Initialisierung — die Preise aus dem echten Portfolio
+    # sind die Referenzbasis. Ein sofortiges yFinance-Update wuerde durch
+    # leicht abweichende Preise kuenstlichen P&L erzeugen.
+    if not just_initialized:
+        await _update_shadow_prices()
+        _accrue_dividends()
 
     # 3. Perception: Kontext aufbauen
     context = _build_agent_context(summary)
@@ -232,33 +238,140 @@ def _get_cash_position_value(summary) -> float:
 # ─────────────────────────────────────────────────────────────
 
 async def _update_shadow_prices():
-    """Aktualisiert die aktuellen Preise aller Shadow-Positionen via yFinance."""
+    """Aktualisiert die aktuellen Preise aller Shadow-Positionen.
+
+    Strategie:
+      1. Primaer: Preise aus dem echten Portfolio (Parqet) uebernehmen.
+         Diese sind bereits korrekt in EUR und konsistent mit dem Start-Kapital.
+      2. Fallback (fuer Shadow-Only Positionen): yFinance + CurrencyConverter.
+    """
     from database import shadow_get_positions, shadow_upsert_position
-    from fetchers.yfinance_data import quick_price_update
+    from state import portfolio_data
 
     positions = shadow_get_positions()
     if not positions:
         return
 
-    tickers = [p["ticker"] for p in positions]
+    # Preismap aus echtem Portfolio aufbauen (bereits EUR)
+    real_prices: dict[str, float] = {}
+    summary = portfolio_data.get("summary")
+    if summary and summary.stocks:
+        for stock in summary.stocks:
+            t = stock.position.ticker
+            if stock.position.shares > 0:
+                real_prices[t] = stock.position.current_value / stock.position.shares
 
-    try:
-        prices, _ = await quick_price_update(tickers)
+    # Shadow-Only Ticker (nicht im echten Portfolio) brauchen yFinance
+    shadow_only_tickers = [
+        p["ticker"] for p in positions
+        if p["ticker"] not in real_prices
+    ]
 
-        for pos in positions:
-            ticker = pos["ticker"]
-            if ticker in prices and prices[ticker] > 0:
-                shadow_upsert_position(
-                    ticker=ticker,
-                    name=pos["name"],
-                    shares=pos["shares"],
-                    avg_cost_eur=pos["avg_cost_eur"],
-                    current_price_eur=prices[ticker],
-                    sector=pos["sector"],
-                )
-        logger.debug(f"Shadow-Preise aktualisiert: {len(prices)} Ticker")
-    except Exception as e:
-        logger.warning(f"Shadow-Preis-Update fehlgeschlagen: {e}")
+    yf_prices_eur: dict[str, float] = {}
+    if shadow_only_tickers:
+        try:
+            from fetchers.yfinance_data import quick_price_update
+            from services.currency_converter import CurrencyConverter
+
+            raw_prices, _ = await quick_price_update(shadow_only_tickers)
+            converter = await CurrencyConverter.create()
+            for ticker, raw_price in raw_prices.items():
+                if raw_price > 0:
+                    yf_prices_eur[ticker] = converter.to_eur(raw_price, ticker)
+        except Exception as e:
+            logger.warning(f"yFinance-Fallback fehlgeschlagen: {e}")
+
+    updated = 0
+    for pos in positions:
+        ticker = pos["ticker"]
+        price_eur = real_prices.get(ticker) or yf_prices_eur.get(ticker)
+        if price_eur and price_eur > 0:
+            shadow_upsert_position(
+                ticker=ticker,
+                name=pos["name"],
+                shares=pos["shares"],
+                avg_cost_eur=pos["avg_cost_eur"],
+                current_price_eur=price_eur,
+                sector=pos["sector"],
+            )
+            updated += 1
+
+    logger.debug(
+        f"Shadow-Preise aktualisiert: {updated}/{len(positions)} "
+        f"(Real: {len(real_prices)}, yFinance: {len(yf_prices_eur)})"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Dividenden-Simulation
+# ─────────────────────────────────────────────────────────────
+
+def _accrue_dividends():
+    """Simuliert Dividenden-Zufluss basierend auf einer geschaetzten Jahresrendite.
+
+    Annahme: 2% p.a. Durchschnitts-Dividendenrendite auf den investierten Wert.
+    Bei jedem Zyklus wird der anteilige Betrag seit dem letzten Lauf berechnet
+    und dem Cash-Bestand gutgeschrieben (nach 26.375% Abgeltungssteuer).
+    """
+    from database import shadow_get_positions, shadow_get_cash, shadow_set_cash, shadow_get_meta, shadow_set_meta
+
+    ANNUAL_DIVIDEND_YIELD = 0.02  # 2% p.a. geschaetzt
+    TAX_RATE = 0.26375
+
+    positions = shadow_get_positions()
+    if not positions:
+        return
+
+    now = datetime.now(tz=TZ_BERLIN)
+    last_div_str = shadow_get_meta("last_dividend_date", "")
+
+    if last_div_str:
+        try:
+            last_div_date = datetime.fromisoformat(last_div_str)
+            days_elapsed = (now - last_div_date).total_seconds() / 86400
+        except ValueError:
+            days_elapsed = 1.0
+    else:
+        days_elapsed = 1.0  # Erster Lauf: 1 Tag
+
+    if days_elapsed < 0.5:
+        return  # Bereits heute gelaufen
+
+    invested_value = sum(p["shares"] * p["current_price_eur"] for p in positions)
+    gross_dividend = invested_value * ANNUAL_DIVIDEND_YIELD * (days_elapsed / 365)
+
+    if gross_dividend < 0.01:
+        shadow_set_meta("last_dividend_date", now.isoformat())
+        return
+
+    # Steuer auf Dividenden
+    loss_pot = float(shadow_get_meta("loss_pot_eur", "0"))
+    taxable = gross_dividend
+    if loss_pot > 0:
+        offset = min(loss_pot, taxable)
+        taxable -= offset
+        loss_pot -= offset
+        shadow_set_meta("loss_pot_eur", str(round(loss_pot, 2)))
+
+    tax = round(taxable * TAX_RATE, 2)
+    net_dividend = round(gross_dividend - tax, 2)
+
+    if tax > 0:
+        total_tax = float(shadow_get_meta("total_tax_paid_eur", "0")) + tax
+        shadow_set_meta("total_tax_paid_eur", str(round(total_tax, 2)))
+
+    total_dividends = float(shadow_get_meta("total_dividends_eur", "0")) + gross_dividend
+    shadow_set_meta("total_dividends_eur", str(round(total_dividends, 2)))
+    shadow_set_meta("last_dividend_date", now.isoformat())
+
+    cash = shadow_get_cash()
+    shadow_set_cash(cash + net_dividend)
+
+    logger.info(
+        f"💰 Dividenden-Simulation: {gross_dividend:,.2f} EUR brutto "
+        f"({days_elapsed:.1f} Tage), Steuer -{tax:,.2f} EUR, "
+        f"netto +{net_dividend:,.2f} EUR → Cash"
+    )
 
 
 # ─────────────────────────────────────────────────────────────
@@ -553,6 +666,7 @@ async def _call_gemini_agent(context: dict, candidates: list[dict]) -> dict:
         "STRATEGIE:\n"
         f"  - Kaufe Aktien mit Score >= {rules['min_buy_score']} und Rating BUY\n"
         "  - Verkaufe Aktien mit Score < 40 (SELL-Rating) oder starker Uebergewichtung\n"
+        "  - Fuer Komplett-Verkauf: setze sell_all=true (amount_eur wird dann ignoriert)\n"
         "  - Nutze die verfuegbaren Tools um aktuelle Daten abzurufen\n"
         "  - Begruende jede Entscheidung praezise (Score, Sektor, Portfolio-Fit)\n"
         "  - Antworte auf Deutsch\n"
@@ -688,6 +802,7 @@ async def _execute_trades(trades: list[dict], summary) -> list[dict]:
         shadow_get_cash, shadow_set_cash,
         shadow_get_positions, shadow_upsert_position, shadow_remove_position,
         shadow_add_transaction, shadow_get_config,
+        shadow_get_meta, shadow_set_meta,
     )
 
     if not trades:
@@ -759,6 +874,23 @@ async def _execute_trades(trades: list[dict], summary) -> list[dict]:
                     if amount_eur < min_trade_eur:
                         logger.debug(f"Shadow Agent: Max Gewicht {max_weight_pct}% fuer {ticker}")
                         continue
+            # Sektor-Konzentrations-Check
+            max_sector_pct = cfg["max_sector_pct"]
+            if total_value > 0:
+                _, buy_sector = _get_stock_meta(ticker, summary)
+                sector_value = sum(
+                    p["shares"] * p["current_price_eur"]
+                    for p in positions.values()
+                    if p.get("sector") == buy_sector
+                )
+                new_sector_value = sector_value + min(amount_eur, available_cash)
+                new_sector_pct = new_sector_value / total_value * 100
+                if new_sector_pct > max_sector_pct:
+                    max_sector_invest = total_value * max_sector_pct / 100 - sector_value
+                    amount_eur = max(0, min(amount_eur, max_sector_invest))
+                    if amount_eur < min_trade_eur:
+                        logger.info(f"Shadow Agent: Sektor {buy_sector} bei {new_sector_pct:.1f}% (Max {max_sector_pct}%) — Skip {ticker}")
+                        continue
 
             actual_amount = min(amount_eur, available_cash)
             shares_bought = actual_amount / current_price_eur
@@ -809,10 +941,16 @@ async def _execute_trades(trades: list[dict], summary) -> list[dict]:
                 continue
 
             pos = positions[ticker]
-            sell_shares = min(amount_eur / current_price_eur, pos["shares"])
+
+            # sell_all Support: Komplette Position verkaufen
+            if trade.get("sell_all", False):
+                sell_shares = pos["shares"]
+            else:
+                sell_shares = min(amount_eur / current_price_eur, pos["shares"])
+
             actual_proceeds = sell_shares * current_price_eur
 
-            if actual_proceeds < MIN_TRADE_EUR:
+            if actual_proceeds < MIN_TRADE_EUR and not trade.get("sell_all", False):
                 continue
 
             remaining_shares = pos["shares"] - sell_shares
@@ -829,7 +967,45 @@ async def _execute_trades(trades: list[dict], summary) -> list[dict]:
                     sector=pos["sector"],
                 )
 
-            shadow_set_cash(cash + actual_proceeds)
+            # ── Kapitalertragssteuer-Simulation ──────────────────
+            # Deutsche Abgeltungssteuer: 25% + 5.5% Soli = 26.375%
+            TAX_RATE = 0.26375
+            cost_basis = sell_shares * pos["avg_cost_eur"]
+            realized_pnl = actual_proceeds - cost_basis
+            tax_paid = 0.0
+
+            loss_pot = float(shadow_get_meta("loss_pot_eur", "0"))
+            total_tax = float(shadow_get_meta("total_tax_paid_eur", "0"))
+
+            if realized_pnl > 0:
+                # Gewinn: Zuerst Verlusttopf verrechnen
+                taxable_gain = realized_pnl
+                if loss_pot > 0:
+                    offset = min(loss_pot, taxable_gain)
+                    taxable_gain -= offset
+                    loss_pot -= offset
+                    logger.info(
+                        f"💰 Shadow SELL {ticker}: Gewinn {realized_pnl:,.2f} EUR, "
+                        f"Verlusttopf-Verrechnung: {offset:,.2f} EUR"
+                    )
+                # Steuer auf verbleibenden Gewinn
+                if taxable_gain > 0:
+                    tax_paid = round(taxable_gain * TAX_RATE, 2)
+                    total_tax += tax_paid
+            elif realized_pnl < 0:
+                # Verlust: Verlusttopf erhoehen
+                loss_pot += abs(realized_pnl)
+                logger.info(
+                    f"📉 Shadow SELL {ticker}: Verlust {realized_pnl:,.2f} EUR → "
+                    f"Verlusttopf: {loss_pot:,.2f} EUR"
+                )
+
+            shadow_set_meta("loss_pot_eur", str(round(loss_pot, 2)))
+            shadow_set_meta("total_tax_paid_eur", str(round(total_tax, 2)))
+
+            # Cash = Erloes minus Steuer
+            net_proceeds = actual_proceeds - tax_paid
+            shadow_set_cash(cash + net_proceeds)
             shadow_add_transaction(
                 action="sell",
                 ticker=ticker,
@@ -837,7 +1013,7 @@ async def _execute_trades(trades: list[dict], summary) -> list[dict]:
                 shares=sell_shares,
                 price_eur=current_price_eur,
                 total_eur=actual_proceeds,
-                reason=reason,
+                reason=reason + (f" | Steuer: -{tax_paid:,.2f} EUR" if tax_paid > 0 else ""),
             )
 
             executed.append({
@@ -846,32 +1022,48 @@ async def _execute_trades(trades: list[dict], summary) -> list[dict]:
                 "shares": round(sell_shares, 4),
                 "price_eur": round(current_price_eur, 2),
                 "total_eur": round(actual_proceeds, 2),
+                "realized_pnl": round(realized_pnl, 2),
+                "tax_paid": round(tax_paid, 2),
                 "reason": reason,
             })
             trades_count += 1
-            logger.info(f"✅ Shadow SELL: {ticker} — {sell_shares:.4f} Stk. @ {current_price_eur:.2f} EUR = {actual_proceeds:,.2f} EUR")
+            logger.info(
+                f"✅ Shadow SELL: {ticker} — {sell_shares:.4f} Stk. @ {current_price_eur:.2f} EUR "
+                f"= {actual_proceeds:,.2f} EUR (PnL: {realized_pnl:+,.2f}, Steuer: -{tax_paid:,.2f})"
+            )
 
     return executed
 
 
 async def _get_current_price_eur(ticker: str, summary) -> float:
-    """Ermittelt den aktuellen EUR-Preis einer Aktie."""
-    # 1. Aus Shadow-DB
+    """Ermittelt den aktuellen EUR-Preis einer Aktie.
+
+    Prioritaet:
+      1. Echtes Portfolio (Parqet, bereits korrekt in EUR)
+      2. Shadow-DB (letzte bekannte Preise)
+      3. yFinance + CurrencyConverter (Fallback fuer neue Positionen)
+    """
+    # 1. Aus echtem Portfolio (bevorzugt — konsistente EUR-Preise)
+    for stock in summary.stocks:
+        if stock.position.ticker == ticker and stock.position.shares > 0:
+            return stock.position.current_value / stock.position.shares
+
+    # 2. Aus Shadow-DB (fuer shadow-only Positionen)
     from database import shadow_get_positions
     for p in shadow_get_positions():
         if p["ticker"] == ticker and p["current_price_eur"] > 0:
             return p["current_price_eur"]
 
-    # 2. Aus echtem Portfolio
-    for stock in summary.stocks:
-        if stock.position.ticker == ticker and stock.position.shares > 0:
-            return stock.position.current_value / stock.position.shares
-
-    # 3. Via yFinance
+    # 3. Via yFinance (Fallback fuer komplett neue Positionen)
     try:
         from fetchers.yfinance_data import quick_price_update
+        from services.currency_converter import CurrencyConverter
         prices, _ = await quick_price_update([ticker])
-        return prices.get(ticker, 0)
+        raw_price = prices.get(ticker, 0)
+        if raw_price > 0:
+            converter = await CurrencyConverter.create()
+            return converter.to_eur(raw_price, ticker)
+        return 0.0
     except Exception:
         return 0.0
 
@@ -960,6 +1152,7 @@ def get_shadow_portfolio_summary() -> dict:
     from database import (
         shadow_get_positions, shadow_get_cash, shadow_get_meta,
     )
+    from state import portfolio_data
 
     positions = shadow_get_positions()
     cash = shadow_get_cash()
@@ -968,6 +1161,15 @@ def get_shadow_portfolio_summary() -> dict:
     start_capital = float(shadow_get_meta("start_capital_eur", str(total_value)))
     pnl = total_value - start_capital
     pnl_pct = (pnl / start_capital * 100) if start_capital > 0 else 0
+
+    # Daily changes aus echtem Portfolio/State holen
+    daily_changes = {}
+    summary = portfolio_data.get("summary")
+    if summary and summary.stocks:
+        for stock in summary.stocks:
+            t = stock.position.ticker
+            if stock.position.daily_change_pct is not None:
+                daily_changes[t] = stock.position.daily_change_pct
 
     # Positionen anreichern
     enriched_positions = []
@@ -980,6 +1182,7 @@ def get_shadow_portfolio_summary() -> dict:
             "weight_pct": round(value / total_value * 100, 1) if total_value > 0 else 0,
             "pnl_pct": round(pos_pnl, 2),
             "pnl_eur": round(value - p["shares"] * p["avg_cost_eur"], 2),
+            "daily_change_pct": daily_changes.get(p["ticker"]),
         })
 
     # Sektor-Verteilung
@@ -988,6 +1191,30 @@ def get_shadow_portfolio_summary() -> dict:
         sec = p.get("sector", "Unknown")
         sectors[sec] = sectors.get(sec, 0) + p["shares"] * p["current_price_eur"]
     sector_pcts = {k: round(v / total_value * 100, 1) for k, v in sectors.items()} if total_value > 0 else {}
+
+    # Echtes Portfolio als Referenz
+    real_total = summary.total_value if summary else 0
+
+    # Steuer-Daten
+    loss_pot = float(shadow_get_meta("loss_pot_eur", "0"))
+    total_tax = float(shadow_get_meta("total_tax_paid_eur", "0"))
+    total_dividends = float(shadow_get_meta("total_dividends_eur", "0"))
+
+    # Performance-Snapshot speichern (füllt Chart-Lücken an Wochenenden/Feiertagen)
+    if positions and shadow_get_meta("initialized") == "true":
+        try:
+            from database import shadow_save_performance
+            shadow_save_performance(
+                total_value_eur=total_value,
+                cash_eur=cash,
+                invested_eur=invested_value,
+                pnl_eur=pnl,
+                pnl_pct=pnl_pct,
+                num_positions=len(positions),
+                real_portfolio_value=real_total,
+            )
+        except Exception:
+            pass  # Nicht kritisch — best effort
 
     return {
         "initialized": shadow_get_meta("initialized") == "true",
@@ -1002,4 +1229,9 @@ def get_shadow_portfolio_summary() -> dict:
         "num_positions": len(positions),
         "positions": enriched_positions,
         "sector_distribution": sector_pcts,
+        "real_total_value_eur": round(real_total, 2),
+        "loss_pot_eur": round(loss_pot, 2),
+        "total_tax_paid_eur": round(total_tax, 2),
+        "total_dividends_eur": round(total_dividends, 2),
     }
+

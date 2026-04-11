@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     # AI Finance Agent
     AI_AGENT_TIME: str = "16:30"
 
+    # Cloud Scheduler API Key (für interne Endpoints ohne Basic Auth)
+    SCHEDULER_API_KEY: str = ""
+
     # Caching
     CACHE_TTL_HOURS: int = 12
 

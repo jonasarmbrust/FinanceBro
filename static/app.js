@@ -3271,6 +3271,27 @@ function renderShadowKpis(data) {
     // Positions
     const posEl = document.getElementById('shadowPositions');
     if (posEl) posEl.textContent = data.num_positions || 0;
+
+    // Tax paid
+    const taxEl = document.getElementById('shadowTaxPaid');
+    if (taxEl) {
+        const tax = data.total_tax_paid_eur || 0;
+        taxEl.textContent = tax > 0 ? `-${formatCurrency(tax)}` : '€0,00';
+    }
+
+    // Loss pot
+    const lossEl = document.getElementById('shadowLossPot');
+    if (lossEl) {
+        const lossPot = data.loss_pot_eur || 0;
+        lossEl.textContent = lossPot > 0 ? formatCurrency(lossPot) : '€0,00';
+    }
+
+    // Dividends
+    const divEl = document.getElementById('shadowDividends');
+    if (divEl) {
+        const divs = data.total_dividends_eur || 0;
+        divEl.textContent = divs > 0 ? `+${formatCurrency(divs)}` : '€0,00';
+    }
 }
 
 /**
@@ -3292,32 +3313,43 @@ function renderShadowPositions(positions) {
     if (emptyEl) emptyEl.style.display = 'none';
 
     tbody.innerHTML = nonInitPositions.map(p => {
-        const pnlClass = p.pnl_pct >= 0 ? 'shadow-pnl-positive' : 'shadow-pnl-negative';
-        const pnlSign = p.pnl_pct >= 0 ? '+' : '';
+        const value = p.value_eur;
+        const pnl = p.pnl_eur;
+        const pnlPct = p.pnl_pct;
+        const pnlClass = pnl >= 0 ? 'positive' : 'negative';
+        const pnlSign = pnl >= 0 ? '+' : '';
+
+        // Daily change — exakte Formel wie im echten Portfolio
+        const dailyPct = p.daily_change_pct;
+        const dailyEur = (dailyPct != null)
+            ? value - value / (1 + dailyPct / 100)
+            : null;
+        const dailyClass = dailyPct > 0 ? 'positive' : dailyPct < 0 ? 'negative' : '';
+        const dailySign = dailyPct != null && dailyPct >= 0 ? '+' : '';
+
+        const dailyRowClass = dailyPct > 0 ? 'row-positive' : dailyPct < 0 ? 'row-negative' : '';
+
         return `
-            <tr>
+            <tr class="${dailyRowClass} v2-row">
                 <td>
                     <div class="stock-info">
-                        <div class="stock-name">${p.name}</div>
-                        <div class="stock-ticker">${p.ticker}</div>
-                    </div>
-                </td>
-                <td>${p.shares.toFixed(4)}</td>
-                <td class="price-cell">${formatCurrency(p.current_price_eur)}</td>
-                <td class="price-cell"><strong>${formatCurrency(p.value_eur)}</strong></td>
-                <td>
-                    <div class="score-bar">
-                        <div class="score-bar-track">
-                            <div class="score-bar-fill" style="width:${Math.min(p.weight_pct * 10, 100)}%;background:var(--shadow-accent)"></div>
+                        <div>
+                            <div class="stock-name">${p.name || p.ticker}</div>
+                            <div class="stock-ticker">${p.ticker} <span class="src-dots"><span class="src-dot src-ok" title="Sektor: ${p.sector || '–'}"></span></span></div>
                         </div>
-                        <span style="color:var(--shadow-accent);font-weight:600">${p.weight_pct.toFixed(1)}%</span>
                     </div>
                 </td>
-                <td class="${pnlClass}">
-                    ${pnlSign}${formatCurrency(p.pnl_eur)}<br>
-                    <small>${pnlSign}${p.pnl_pct.toFixed(2)}%</small>
+                <td class="price-cell">${formatCurrency(p.current_price_eur)}</td>
+                <td class="price-cell cost-cell">${formatCurrency(p.avg_cost_eur)}</td>
+                <td class="pnl-cell ${dailyClass}">
+                    ${dailyPct != null ? `${dailySign}${formatCurrency(dailyEur)}<br><small>${dailySign}${dailyPct.toFixed(2)}%</small>` : '–'}
                 </td>
-                <td><small style="color:var(--text-muted)">${p.sector || '–'}</small></td>
+                <td>${p.shares.toFixed(2)}</td>
+                <td class="price-cell">${formatCurrency(value)}</td>
+                <td class="pnl-cell ${pnlClass}">
+                    ${pnlSign}${formatCurrency(pnl)}<br>
+                    <small>${pnlSign}${pnlPct.toFixed(1)}%</small>
+                </td>
             </tr>
         `;
     }).join('');

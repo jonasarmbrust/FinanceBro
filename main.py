@@ -213,6 +213,27 @@ async def lifespan(app: FastAPI):
         )
         logger.info("📡 News-Kurator geplant: Mo-Fr um 09, 13, 17, 21 Uhr CET")
 
+        # Market Monitor: Ad-hoc Event Alerts (alle 30 Min, Mo-Fr)
+        async def _run_market_monitor():
+            try:
+                from services.market_monitor import check_market_events
+                result = await check_market_events()
+                if result["alerts_sent"] > 0:
+                    logger.info(
+                        f"🚨 Market Monitor: {result['alerts_sent']} Alert(s) gesendet"
+                    )
+            except Exception as e:
+                logger.debug(f"Market Monitor Check fehlgeschlagen: {e}")
+
+        scheduler.add_job(
+            _run_market_monitor, "cron",
+            minute="*/30",
+            hour="9-22",
+            day_of_week="mon-fri",
+            id="market_monitor",
+        )
+        logger.info("🚨 Market Monitor geplant: Mo-Fr alle 30 Min (09-22 Uhr CET)")
+
         # AI Finance Agent wird automatisch nach jeder Analyse in _do_refresh() getriggert
         if settings.telegram_configured:
             logger.info("🤖 AI Finance Agent: Wird nach Analyse automatisch getriggert (Telegram-Report)")

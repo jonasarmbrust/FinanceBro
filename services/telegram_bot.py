@@ -6,6 +6,7 @@ Unterstützte Befehle:
   /score AAPL — Score einer einzelnen Aktie
   /refresh — Full Refresh triggern
   /news   — Freie Marktanalyse durch Gemini 2.5 Pro
+  /alerts — Market Monitor Status & manueller Check
   /earnings — Earnings-Analyse für Portfolio-Aktien
   /risk [szenario] — Risiko-Szenario-Analyse
   /wissen — Tägliche Lern-Tipps & Projekt-Wissen
@@ -83,6 +84,8 @@ async def handle_update(update: dict) -> None:
         await _cmd_news(chat_id)
     elif cmd == "/news-alerts":
         await _cmd_news_alerts(chat_id)
+    elif cmd == "/alerts":
+        await _cmd_alerts(chat_id, args)
     elif cmd == "/earnings":
         await _cmd_earnings(chat_id)
     elif cmd == "/risk":
@@ -122,6 +125,7 @@ async def _cmd_start(chat_id: str):
         "  /refresh — Daten aktualisieren\n"
         "  /news — Marktanalyse (Gemini Pro)\n"
         "  /news-alerts — Portfolio-News prüfen\n"
+        "  /alerts — Market Event Monitor\n"
         "  /wissen — Lern-Tipps & Projekt-Wissen\n"
         "  🎙️ Sprachnachricht — Voice-to-Action\n"
         "  /help — Befehlsübersicht\n",
@@ -141,6 +145,7 @@ async def _cmd_help(chat_id: str):
         "  /risk — Risiko-Szenarien\n"
         "  /news — Marktanalyse\n"
         "  /news-alerts — Portfolio-News prüfen\n"
+        "  /alerts — Market Event Monitor\n"
         "  /wissen — Lern-Tipps & Projekt-Wissen\n"
         "  /refresh — Full Refresh starten\n"
         "  /help — Diese Übersicht\n\n"
@@ -1057,4 +1062,64 @@ async def _cmd_news_alerts(chat_id: str):
     except Exception as e:
         logger.error(f"/news-alerts fehlgeschlagen: {e}")
         await send_message(f"❌ News-Check fehlgeschlagen: {e}", chat_id=chat_id)
+
+
+# ─────────────────────────────────────────────────────────────
+# Feature: /alerts — Ad-hoc Market Event Monitor
+# ─────────────────────────────────────────────────────────────
+
+async def _cmd_alerts(chat_id: str, args: list[str]):
+    """Market Event Monitor: Status anzeigen oder manuellen Check triggern.
+
+    Sub-Commands:
+      /alerts        → Status + Schwellenwerte anzeigen
+      /alerts check  → Manuellen Market Check triggern
+    """
+    from services.telegram import send_message
+
+    sub = args[0].lower() if args else ""
+
+    if sub == "check":
+        # Manuellen Market Check triggern
+        await send_message("🚨 Prüfe Marktbewegungen...", chat_id=chat_id)
+        try:
+            from services.market_monitor import check_market_events
+            result = await check_market_events(force=True)
+            if result["alerts_sent"] == 0:
+                await send_message(
+                    "✅ Keine dramatischen Marktbewegungen erkannt.\n"
+                    "Alles im normalen Bereich.",
+                    chat_id=chat_id,
+                )
+            # Wenn Alerts gesendet wurden, kommen sie automatisch via Telegram
+        except Exception as e:
+            logger.error(f"/alerts check fehlgeschlagen: {e}")
+            await send_message(f"❌ Market Check fehlgeschlagen: {e}", chat_id=chat_id)
+    else:
+        # Status + Schwellenwerte anzeigen
+        try:
+            from services.market_monitor import get_monitor_status
+            status = get_monitor_status()
+            thresholds = status["thresholds"]
+
+            lines = [
+                "🚨 *Market Event Monitor*\n",
+                f"📊 Alerts heute: {status['alerts_sent_today']}/{status['max_alerts_per_day']}",
+                "",
+                "⚙️ *Schwellenwerte:*",
+                f"  📉 Portfolio-Crash: ≤ {thresholds['portfolio_crash']}%",
+                f"  📈 Portfolio-Rally: ≥ +{thresholds['portfolio_rally']}%",
+                f"  💥 Aktien-Crash: ≤ {thresholds['stock_crash']}%",
+                f"  ⚡ Aktien-Spike: ≥ +{thresholds['stock_spike']}%",
+                f"  😱 Extreme Fear: ≤ {thresholds['fear_greed_extreme_low']}/100",
+                f"  🔀 F&G Shift: ≥ {thresholds['fear_greed_shift']} Punkte",
+                "",
+                "⏰ *Automatisch:* alle 30 Min (Mo-Fr 09-22 Uhr)",
+                "",
+                "Tippe `/alerts check` für einen manuellen Check.",
+            ]
+            await send_message("\n".join(lines), chat_id=chat_id)
+        except Exception as e:
+            logger.error(f"/alerts Status fehlgeschlagen: {e}")
+            await send_message(f"❌ Fehler: {e}", chat_id=chat_id)
 

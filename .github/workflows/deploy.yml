@@ -88,6 +88,7 @@ jobs:
             --update-env-vars="DASHBOARD_USER=${{ secrets.DASHBOARD_USER }}" \
             --update-env-vars="DASHBOARD_PASSWORD=${{ secrets.DASHBOARD_PASSWORD }}" \
             --update-env-vars="PRICE_UPDATE_INTERVAL_MIN=30" \
+            --update-env-vars="SCHEDULER_API_KEY=${{ secrets.SCHEDULER_API_KEY }}" \
             --quiet
 
       - name: Show service URL

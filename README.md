@@ -5,7 +5,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Gemini AI](https://img.shields.io/badge/Gemini_AI-2.5_Pro-4285F4.svg?logo=google&logoColor=white)](https://ai.google.dev)
 [![Cloud Run](https://img.shields.io/badge/Cloud_Run-Deployed-4285F4.svg?logo=googlecloud&logoColor=white)](https://cloud.google.com/run)
-[![Tests](https://img.shields.io/badge/Tests-391-22c55e.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-420-22c55e.svg)](tests/)
 [![CI/CD](https://github.com/jonasarmbrust/FinanceBro/actions/workflows/deploy.yml/badge.svg)](https://github.com/jonasarmbrust/FinanceBro/actions)
 
 > **Watch the markets. Reason with data. Act on conviction.**
@@ -58,7 +58,7 @@ FinanceBro features a native Telegram integration allowing you to trigger AI fea
 ## ✨ Core Features
 
 🤖 **1. Autonomous AI Shadow Agent (Agentic Workflow)**  
-A fully autonomous paper-trading engine powered by Gemini 2.5 Pro. It manages an independent portfolio by algorithmically making distinct daily BUY/SELL decisions based on customizable strategies (Aggressive, Balanced, Conservative). It showcases advanced agentic *Function Calling* by independently fetching live market data, verifying strict portfolio rules, and recording transparent reasoning logs for every single trade.
+A fully autonomous paper-trading engine powered by Gemini 2.5 Pro. It manages an independent portfolio by algorithmically making distinct daily BUY/SELL decisions based on customizable strategies (Aggressive, Balanced, Conservative). It showcases advanced agentic *Function Calling* by independently fetching live market data, verifying strict portfolio rules (including sector concentration guards), and recording transparent reasoning logs for every single trade. Includes a full **German capital gains tax simulation** (26.375% Abgeltungssteuer + loss pot offsetting), **dividend income simulation** (2% p.a. with tax), and `sell_all` support for complete position exits.
 
 🎙️ **2. Conversational AI & Voice-First Interface (Telegram)**  
 *Talk to your portfolio!* FinanceBro features a native Telegram Bot with seamless voice-note processing. Simply hold the mic and ask: *"How did my tech stocks perform today?"* The system dynamically transcribes the audio, fetches real-time data, analyzes it via Gemini, and responds conversationally. Complete with secure Webhook validation and proactive push notifications.
@@ -80,9 +80,9 @@ Ultimate flexibility for onboarding: securely synchronize your real-world portfo
 | **AI** | Google Gemini 2.5 Pro + Flash (Function Calling, Structured Output, Context Caching) |
 | **Data** | Parqet API (OAuth2/PKCE), CSV Import, FMP API, yFinance, CNN Fear & Greed |
 | **Frontend** | Vanilla HTML/JS/CSS, Chart.js, SSE Streaming, Dark/Light Mode, i18n (DE/EN) |
-| **Infrastructure** | Docker, Google Cloud Run (Service + Job), SQLite |
+| **Infrastructure** | Docker, Google Cloud Run (Service + Job), SQLite, Litestream → GCS |
 | **Bot** | Telegram Bot API (Commands, Voice Input, Inline Buttons) |
-| **Tests** | pytest (391 tests, 22 test files) |
+| **Tests** | pytest (420 tests, 23 test files) |
 
 
 
@@ -99,6 +99,7 @@ FastAPI Backend (local / Cloud Run)
     ├── fetchers/        → Data sources (Parqet, CSV, FMP, yfinance)
     ├── static/          → Dashboard SPA + translations.js (200+ i18n keys)
     ├── database.py      → SQLite persistence (WAL, score history, snapshots)
+    ├── litestream.yml   → SQLite → GCS continuous replication
     └── cache/           → In-memory + disk caches
 ```
 
@@ -140,11 +141,12 @@ FastAPI Backend (local / Cloud Run)
 
 | Feature | Model | Description |
 |---------|-------|-------------|
-| **Shadow Portfolio Agent** | Pro + **Function Calling** | 🤖 Autonomous Paper-Trading Fund Manager |
+| **Shadow Portfolio Agent** | Pro + **Function Calling** | 🤖 Autonomous Paper-Trading Fund Manager (Tax + Dividends) |
 | **Voice-to-Action Assistant** | Pro + **Function Calling** + Audio | 🎙️ Voice messages natively to Gemini (Telegram) |
 | **AI Trade Advisor** | Pro + Grounding + **Function Calling** | 🧠 Agentic advisor — Gemini autonomously calls tools |
 | **AI Chat** | Pro + **Function Calling** | 💬 Free-form portfolio discussion in browser |
 | **News Curator** | Flash + Grounding + **Structured Output** | 📡 Proactive portfolio news alerts (4×/day) |
+| **Market Monitor** | Flash + Grounding | 🚨 Ad-hoc market event alerts (every 30min) |
 | Score Commentaries | Flash + **Structured Output** | AI commentary per stock on each refresh |
 | Earnings Analysis | Pro + Grounding + **Structured Output** | `/earnings` — Real-time earnings via Search |
 | Portfolio Chat | Pro + Grounding | Free-text questions in Telegram |
@@ -156,6 +158,8 @@ FastAPI Backend (local / Cloud Run)
 Gemini 2.5 Pro has access to specialized tools and autonomously decides which data is needed:
 - `get_stock_score(ticker)` — Calculate 10-factor score
 - `get_shadow_portfolio()` — Fetch autonomous portfolio context
+- `get_sector_concentration()` — Sector risk analysis with violation detection
+- `get_market_context()` — Fear & Greed Index + sector trends
 - `get_sector_impact(...)` — Simulate real-portfolio sector impact
 
 ### Async AI Integration
@@ -215,6 +219,7 @@ The dashboard supports German and English. Click the language toggle (DE/EN) in 
 | `/earnings [TICKER]` | Earnings analysis (AI) |
 | `/risk` | Risk scenarios (AI) |
 | `/news-alerts` | Check portfolio news (AI) |
+| `/alerts` | Market event monitor status & manual check |
 | 🎙️ Voice message | Voice-to-action (AI) |
 | Free text | Portfolio chat (AI) |
 
@@ -238,7 +243,8 @@ The dashboard supports German and English. Click the language toggle (DE/EN) in 
 
 | Storage | Technology | Contents |
 |---------|-----------|----------|
-| SQLite (`financebro.db`) | WAL mode, thread-safe | Score history, snapshots, reports |
+| SQLite (`financebro.db`) | WAL mode, thread-safe | Score history, snapshots, reports, Shadow Agent |
+| **Litestream → GCS** | Continuous replication | SQLite backup to `gs://financebro-litestream/` (survives deploys) |
 | JSON Cache | Memory + Disk | FMP, yFinance, Fear&Greed (volatile) |
 | Parqet Cache | Memory + Disk | Positions, tokens (persistent) |
 
@@ -299,6 +305,7 @@ GCP_PROJECT_ID=...
 | Intraday Prices | Every 15 min (Mon-Fri) | yFinance Batch |
 | Weekly Digest | Friday 22:30 | Weekly AI summary |
 | News Curator | 09, 13, 17, 21h (Mon-Fri) | Portfolio news alerts (Gemini Flash) |
+| Market Monitor | Every 30 min (Mon-Fri 09-22) | Ad-hoc event alerts (crash, spike, F&G shift) |
 | Cloud Run Job | 15:45 (Cloud Scheduler) | Full Refresh → Telegram Report |
 
 ## Project Structure
@@ -312,7 +319,9 @@ FinanceBro/
 ├── database.py          # SQLite persistence (WAL, 9 tables incl. Shadow Agent)
 ├── cache_manager.py     # Memory + disk cache
 ├── logging_config.py    # structlog (JSON/Console)
-├── Dockerfile           # Cloud Run Service container
+├── litestream.yml       # SQLite → GCS continuous replication config
+├── start.sh             # Container entrypoint (Litestream restore → replicate → uvicorn)
+├── Dockerfile           # Cloud Run Service container (with Litestream)
 ├── Dockerfile.job       # Cloud Run Job container
 ├── run_job.py           # Job entry point (Refresh → Report)
 ├── middleware/
@@ -352,6 +361,7 @@ FinanceBro/
 │   ├── score_commentary.py  # AI score commentaries (Structured Output)
 │   ├── weekly_digest.py # Weekly digest (Flash)
 │   ├── news_kurator.py  # Proactive portfolio news alerts (Structured Output)
+│   ├── market_monitor.py    # Ad-hoc market event alerting (crash/spike/F&G)
 │   ├── tech_radar_ai.py # Tech recommendations (AI)
 │   ├── analyst_tracker.py   # Analyst track record
 │   ├── knowledge_data.py    # Knowledge base (project facts + daily tips)
@@ -372,5 +382,5 @@ FinanceBro/
 │   ├── app.js           # Frontend logic (~3400 LOC)
 │   ├── translations.js  # i18n system (225 keys, DE/EN)
 │   └── styles.css       # Design system (~3800 LOC, Dark/Light Mode)
-└── tests/               # 391 pytest tests (22 test files)
+└── tests/               # 420 pytest tests (23 test files)
 ```

@@ -1,0 +1,7 @@
+dbs:
+  - path: /app/cache/financebro.db
+    replicas:
+      - type: gcs
+        bucket: financebro-litestream
+        path: financebro-db
+        sync-interval: 5s

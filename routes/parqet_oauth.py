@@ -20,12 +20,30 @@ router = APIRouter()
 
 
 def _get_redirect_uri(request: Request) -> str:
-    """Baut die Redirect URI mit korrektem Schema (https auf Cloud Run)."""
+    """Baut die Redirect URI mit korrektem Schema (https auf Cloud Run).
+
+    Cloud Run terminiert TLS am Load Balancer → App sieht http://.
+    Zudem kann request.base_url einen internen Port enthalten (:8080).
+    Wir nutzen X-Forwarded-Host für die korrekte externe URL.
+    """
+    if os.getenv("ENVIRONMENT") == "production":
+        # Cloud Run setzt X-Forwarded-Host mit der externen URL
+        forwarded_host = request.headers.get("X-Forwarded-Host", "")
+        if forwarded_host:
+            # Port entfernen falls vorhanden
+            host = forwarded_host.split(":")[0]
+            return f"https://{host}/api/parqet/callback"
+        # Fallback: base_url bereinigen (Port entfernen, https)
+        base = str(request.base_url).rstrip("/")
+        if base.startswith("http://"):
+            base = "https://" + base[7:]
+        # Port entfernen (z.B. :8080)
+        import re
+        base = re.sub(r":\d+$", "", base)
+        return f"{base}/api/parqet/callback"
+
+    # Lokal: base_url direkt verwenden
     base = str(request.base_url).rstrip("/")
-    # Cloud Run terminiert TLS am Load Balancer → App sieht http://
-    # Aber die registrierte Redirect URI ist https://
-    if os.getenv("ENVIRONMENT") == "production" and base.startswith("http://"):
-        base = "https://" + base[7:]
     return f"{base}/api/parqet/callback"
 
 
@@ -37,6 +55,7 @@ async def parqet_authorize(request: Request):
     Nach dem Login kommt der Callback mit den Tokens.
     """
     redirect_uri = _get_redirect_uri(request)
+    logger.info(f"Parqet OAuth: redirect_uri={redirect_uri}, base_url={request.base_url}")
     auth_url, _ = generate_oauth_url(redirect_uri)
     return RedirectResponse(url=auth_url)
 

@@ -130,6 +130,12 @@ def _save_cache(positions: list[dict]):
     _cache.flush()
     logger.info(f"Parqet Cache gespeichert: {len(positions)} Positionen")
 
+
+def clear_cache():
+    """Löscht den Parqet-Positionscache (erzwingt frische API-Abfrage)."""
+    _cache.clear()
+    logger.info("Parqet-Cache gelöscht → nächster Aufruf holt frische Daten von API")
+
 # ISIN-to-Ticker mapping (includes all portfolio positions)
 ISIN_TICKER_MAP = {
     # US Large-Cap
