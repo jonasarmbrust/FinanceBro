@@ -39,6 +39,7 @@ MIN_TRADE_EUR = 500.0       # Minimum Trade-Volumen
 MAX_TRADES_PER_CYCLE = 3    # Max Trades pro Zyklus
 MAX_SECTOR_PCT = 35.0       # Max Sektor-Konzentration
 MIN_BUY_SCORE = 60.0        # Mindest-Score fuer Kaeufe
+MAX_PRICE_CHANGE_PCT = 50.0 # Max erlaubte Preisaenderung pro Zyklus (%)
 
 # ── Gemini Structured Output Schema ──────────────────────────
 SHADOW_DECISION_SCHEMA = {
@@ -71,18 +72,37 @@ SHADOW_DECISION_SCHEMA = {
 # Haupt-Entry-Point
 # ─────────────────────────────────────────────────────────────
 
-async def run_shadow_agent_cycle() -> dict:
+async def run_shadow_agent_cycle(force: bool = False) -> dict:
     """Fuehrt einen vollstaendigen Shadow-Agent-Zyklus aus.
+
+    Args:
+        force: Wenn True, wird der Tages-Lock ignoriert (fuer manuelle Ausfuehrung).
 
     Returns:
         Dict mit Cycle-Report (trades, performance, ai_reasoning)
     """
     from state import portfolio_data
+    from database import shadow_get_meta, shadow_set_meta
 
     logger.info("🤖 Shadow Agent: Zyklus startet...")
 
     if not settings.gemini_configured:
         return {"error": "Gemini nicht konfiguriert", "status": "skipped"}
+
+    # ── Tages-Lock: Verhindert doppelte Ausfuehrung ──────────
+    # Bei Cloud Run Deployments laufen alte und neue Revisionen
+    # kurz parallel — beide haben eigene APScheduler und wuerden
+    # den Zyklus doppelt ausfuehren.
+    now = datetime.now(tz=TZ_BERLIN)
+    today = now.strftime("%Y-%m-%d")
+    last_cycle = shadow_get_meta("last_cycle_date", "")
+
+    if last_cycle == today and not force:
+        logger.info(f"🤖 Shadow Agent: Heute ({today}) bereits gelaufen — Skip")
+        return {"status": "skipped", "reason": "already_run_today"}
+
+    # Lock sofort setzen (vor dem eigentlichen Zyklus)
+    shadow_set_meta("last_cycle_date", today)
 
     summary = portfolio_data.get("summary")
     if not summary or not summary.stocks:
@@ -282,10 +302,26 @@ async def _update_shadow_prices():
             logger.warning(f"yFinance-Fallback fehlgeschlagen: {e}")
 
     updated = 0
+    skipped_anomalies = []
     for pos in positions:
         ticker = pos["ticker"]
         price_eur = real_prices.get(ticker) or yf_prices_eur.get(ticker)
         if price_eur and price_eur > 0:
+            # ── Preis-Plausibilitaets-Check ──────────────────
+            # Verhindert kuenstlichen P&L durch fehlerhafte yFinance-Daten
+            # (z.B. Close vs. Open-Inkonsistenzen bei exotischen Boersen)
+            old_price = pos["current_price_eur"]
+            if old_price > 0:
+                change_pct = abs(price_eur - old_price) / old_price * 100
+                if change_pct > MAX_PRICE_CHANGE_PCT:
+                    skipped_anomalies.append(ticker)
+                    logger.warning(
+                        f"Shadow Preis-Anomalie: {ticker} "
+                        f"{old_price:.2f} -> {price_eur:.2f} EUR "
+                        f"({change_pct:+.1f}%) — Update uebersprungen"
+                    )
+                    continue
+
             shadow_upsert_position(
                 ticker=ticker,
                 name=pos["name"],
@@ -844,6 +880,21 @@ async def _execute_trades(trades: list[dict], summary) -> list[dict]:
             logger.warning(f"Shadow Agent: Kein Preis fuer {ticker}")
             continue
 
+        # ── Preis-Plausibilitaets-Check ──────────────────────
+        # Blockiert Trades wenn der Preis seit letztem Zyklus um mehr als
+        # MAX_PRICE_CHANGE_PCT gesprungen ist (yFinance-Datenanomalie).
+        if ticker in positions:
+            old_price = positions[ticker]["current_price_eur"]
+            if old_price > 0:
+                change_pct = abs(current_price_eur - old_price) / old_price * 100
+                if change_pct > MAX_PRICE_CHANGE_PCT:
+                    logger.warning(
+                        f"Shadow Agent: Preis-Anomalie {ticker}: "
+                        f"{old_price:.2f} -> {current_price_eur:.2f} EUR "
+                        f"({change_pct:+.1f}%) — Trade uebersprungen"
+                    )
+                    continue
+
         cash = shadow_get_cash()
         positions = {p["ticker"]: p for p in shadow_get_positions()}
         total_value = sum(p["shares"] * p["current_price_eur"] for p in positions.values()) + cash
@@ -1200,6 +1251,10 @@ def get_shadow_portfolio_summary() -> dict:
     total_tax = float(shadow_get_meta("total_tax_paid_eur", "0"))
     total_dividends = float(shadow_get_meta("total_dividends_eur", "0"))
 
+    # Brutto-P&L: P&L VOR Steuern (= Netto-P&L + gezahlte Steuern)
+    pnl_gross = pnl + total_tax
+    pnl_gross_pct = (pnl_gross / start_capital * 100) if start_capital > 0 else 0
+
     # Performance-Snapshot speichern (füllt Chart-Lücken an Wochenenden/Feiertagen)
     if positions and shadow_get_meta("initialized") == "true":
         try:
@@ -1226,6 +1281,8 @@ def get_shadow_portfolio_summary() -> dict:
         "invested_eur": round(invested_value, 2),
         "pnl_eur": round(pnl, 2),
         "pnl_pct": round(pnl_pct, 2),
+        "pnl_gross_eur": round(pnl_gross, 2),
+        "pnl_gross_pct": round(pnl_gross_pct, 2),
         "num_positions": len(positions),
         "positions": enriched_positions,
         "sector_distribution": sector_pcts,
@@ -1235,3 +1292,139 @@ def get_shadow_portfolio_summary() -> dict:
         "total_dividends_eur": round(total_dividends, 2),
     }
 
+
+async def reconcile_shadow_data(exclude_tickers: list[str] | None = None) -> dict:
+    """Bereinigt das Shadow-Portfolio von Datenfehlern.
+    
+    Erkennt und entfernt doppelte Transaktionen (gleicher Tag, Aktion, Ticker),
+    die durch parallele Container-Ausfuehrungen entstanden sind. Baut danach
+    den Shadow-Portfolio-Bestand (Positionen, Cash, Verlusttoepfe) komplett
+    neu aus der bereinigten Historie auf.
+
+    Args:
+        exclude_tickers: Liste von Tickern deren Transaktionen komplett
+            entfernt werden (z.B. bei fehlerhaften Kursdaten).
+    """
+    from database import (
+        shadow_get_meta, shadow_set_meta,
+        shadow_upsert_position, shadow_remove_position, shadow_set_cash,
+        _get_conn
+    )
+    from state import portfolio_data
+    
+    conn = _get_conn()
+    all_tx = conn.execute("SELECT * FROM shadow_transactions ORDER BY id ASC").fetchall()
+    
+    seen_trades = set()
+    to_delete = []
+    excluded_tickers_set = set(t.upper() for t in (exclude_tickers or []))
+    
+    # 1. Duplikate + ausgeschlossene Ticker identifizieren
+    for tx in all_tx:
+        # Ausgeschlossene Ticker komplett entfernen
+        if tx["ticker"].upper() in excluded_tickers_set:
+            to_delete.append(tx["id"])
+            continue
+
+        if tx["action"] == "init":
+            continue
+            
+        date = tx["timestamp"][:10]  # YYYY-MM-DD
+        key = (date, tx["action"], tx["ticker"], round(tx["shares"], 4))
+        
+        if key in seen_trades:
+            to_delete.append(tx["id"])
+        else:
+            seen_trades.add(key)
+            
+    if to_delete:
+        logger.info(f"🗑️ Reconcile: Lösche {len(to_delete)} doppelte Transaktionen: {to_delete}")
+        placeholders = ",".join("?" for _ in to_delete)
+        conn.execute(f"DELETE FROM shadow_transactions WHERE id IN ({placeholders})", to_delete)
+        conn.commit()
+    
+    # 2. Portfolio, Cash und Verlusttopf zuruecksetzen
+    conn.execute("DELETE FROM shadow_portfolio")
+    start_capital = float(shadow_get_meta("start_capital_eur", "0"))
+    shadow_set_cash(start_capital)
+    shadow_set_meta("loss_pot_eur", "0")
+    shadow_set_meta("total_tax_paid_eur", "0")
+    
+    # 3. Bereinigte Historie neu einspielen (Replay)
+    clean_tx = conn.execute("SELECT * FROM shadow_transactions ORDER BY id ASC").fetchall()
+    logger.info("🔄 Reconcile: Replay der Historie beginnt...")
+    
+    summary = portfolio_data.get("summary")
+    
+    for tx in clean_tx:
+        ticker = tx["ticker"]
+        action = tx["action"]
+        shares = tx["shares"]
+        price = tx["price_eur"]
+        total = tx["total_eur"]
+        name = tx["name"]
+        
+        _, sector = _get_stock_meta(ticker, summary) if summary else (ticker, "Unknown")
+        cash = float(shadow_get_meta("cash_eur", "0"))
+        
+        row = conn.execute("SELECT shares, avg_cost_eur FROM shadow_portfolio WHERE ticker = ?", (ticker,)).fetchone()
+        current_shares = row["shares"] if row else 0
+        current_avg_cost = row["avg_cost_eur"] if row else 0
+        
+        if action == "init" or action == "buy":
+            new_shares = current_shares + shares
+            new_avg_cost = ((current_shares * current_avg_cost) + total) / new_shares if new_shares > 0 else price
+            
+            shadow_upsert_position(ticker, name, new_shares, new_avg_cost, price, sector)
+            shadow_set_cash(cash - total)  # Cash abziehen fuer init UND buy
+                
+        elif action == "sell":
+            remain_shares = current_shares - shares
+            if remain_shares < 0.0001:
+                shadow_remove_position(ticker)
+            else:
+                shadow_upsert_position(ticker, name, remain_shares, current_avg_cost, price, sector)
+                
+            # Steuerabzug simulieren
+            TAX_RATE = 0.26375
+            cost_basis = shares * current_avg_cost
+            realized_pnl = total - cost_basis
+            tax_paid = 0.0
+            
+            loss_pot = float(shadow_get_meta("loss_pot_eur", "0"))
+            total_tax = float(shadow_get_meta("total_tax_paid_eur", "0"))
+            
+            if realized_pnl > 0:
+                taxable_gain = realized_pnl
+                if loss_pot > 0:
+                    offset = min(loss_pot, taxable_gain)
+                    taxable_gain -= offset
+                    loss_pot -= offset
+                if taxable_gain > 0:
+                    tax_paid = round(taxable_gain * TAX_RATE, 2)
+                    total_tax += tax_paid
+            elif realized_pnl < 0:
+                loss_pot += abs(realized_pnl)
+                
+            shadow_set_meta("loss_pot_eur", str(round(loss_pot, 2)))
+            shadow_set_meta("total_tax_paid_eur", str(round(total_tax, 2)))
+            
+            shadow_set_cash(cash + (total - tax_paid))
+            
+    conn.commit()
+    
+    # 4. Aktuelle Kurse laden
+    try:
+        await _update_shadow_prices()
+    except Exception as e:
+        logger.warning(f"Reconcile: Fehler beim API Live-Preis Update: {e}")
+
+    logger.info(f"✅ Reconcile abgeschlossen. {len(to_delete)} geloescht. {len(clean_tx)} Trades replayed.")
+    
+    return {
+        "status": "ok",
+        "deleted_duplicates": len(to_delete),
+        "replayed_transactions": len(clean_tx),
+        "new_cash": float(shadow_get_meta("cash_eur", "0")),
+        "message": "Shadow Portfolio wurde bereinigt und P&L korrigiert",
+    }

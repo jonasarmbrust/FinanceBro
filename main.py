@@ -171,8 +171,9 @@ async def lifespan(app: FastAPI):
 
     # Schedule: Einzige geplante Analyse um 16:15 CET
     try:
+        from zoneinfo import ZoneInfo
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
-        scheduler = AsyncIOScheduler()
+        scheduler = AsyncIOScheduler(timezone=ZoneInfo("Europe/Berlin"))
 
         scheduler.add_job(
             _refresh_data, "cron",
@@ -182,20 +183,12 @@ async def lifespan(app: FastAPI):
         )
         logger.info("\U0001f4ca Vollständige Analyse geplant um 16:15 CET (Mo-Fr)")
 
-        # Weekly Digest (Sonntag 18:00 CET)
-        async def _run_weekly_digest():
-            try:
-                from services.weekly_digest import send_weekly_digest
-                await send_weekly_digest()
-            except Exception as e:
-                logger.warning(f"Weekly Digest fehlgeschlagen: {e}")
-
-        scheduler.add_job(
-            _run_weekly_digest, "cron",
-            day_of_week="fri", hour=22, minute=30,
-            id="weekly_digest",
-        )
-        logger.info("📧 Wöchentlicher Digest geplant: Freitag 22:30 CET (nach US-Börsenschluss)")
+        # Weekly Digest: Via Cloud Scheduler (POST /api/trigger-weekly-digest)
+        # APScheduler kann den Digest NICHT zuverlässig senden, weil:
+        # - Keep-Alive endet um 22:00 CET → Container stirbt
+        # - APScheduler-Job um 22:30 CET wird nie erreicht
+        # → Cloud Scheduler triggert den Endpoint direkt (funktioniert auch bei Cold Start)
+        logger.info("📧 Wöchentlicher Digest: Via Cloud Scheduler (Freitag 22:30 CET)")
 
         # News-Kurator: Proaktive Portfolio-Alerts (alle 4h, Mo-Fr)
         async def _run_news_kurator():

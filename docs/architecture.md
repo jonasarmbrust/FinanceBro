@@ -282,18 +282,21 @@ Trigger: Cloud Scheduler → 15:45 CET täglich
 Kosten:  0 €/Monat (Free Tier)
 ```
 
-### Scheduler (APScheduler)
+### Scheduler (APScheduler + Cloud Scheduler)
 
-| Job | Zeit | Funktion |
-|-----|------|----------|
-| Full Analyse | 16:15 CET | Refresh + Scoring + AI Report |
-| Shadow Agent | Mo-Fr 17:00 CET | Autonomer Paper-Trading-Zyklus (Gemini Pro) |
-| News-Kurator | Mo-Fr 09, 13, 17, 21 | Proaktive Portfolio-News-Alerts |
-| Intraday Kurse | alle 15min Mo-Fr 8-22h | yFinance Batch |
-| Weekly Digest | Freitag 22:30 | KI-Zusammenfassung |
-| Cloud Run Job | 15:45 CET (Cloud Scheduler) | Full Refresh → Telegram Report |
+| Job | Trigger | Zeit | Funktion |
+|-----|---------|------|----------|
+| Full Analyse | APScheduler | Mo-Fr 16:15 CET | Refresh + Scoring + AI Report |
+| Shadow Agent | APScheduler | Mo-Fr 17:00 CET | Autonomer Paper-Trading-Zyklus (Gemini Pro) |
+| News-Kurator | APScheduler | Mo-Fr 09, 13, 17, 21 | Proaktive Portfolio-News-Alerts |
+| Intraday Kurse | APScheduler | alle 15min Mo-Fr 8-22h | yFinance Batch |
+| Market Monitor | APScheduler | alle 30min Mo-Fr 9-22h | Ad-hoc Event Alerts |
+| Weekly Digest | Cloud Scheduler | Freitag 22:30 CET | KI-Wochenzusammenfassung via `/api/trigger-weekly-digest` |
+| Daily Pre-Warm | Cloud Scheduler | Mo-Fr 06:00 CET | Full Refresh (Daten vorwärmen, kein Report) |
+| Keep-Alive | Cloud Scheduler | Mo-Fr alle 10min 8-22h | Hält Container wach für APScheduler |
+| Price Update | Cloud Scheduler | Mo-Fr alle 30min 14-22h | Kurs-Updates via `/api/refresh/prices` |
 
-> **Wichtig:** Der APScheduler läuft in-process im Cloud Run Container. Ohne den `financebro-keepalive` Cloud Scheduler Job würde der Container bei Inaktivität abschalten und alle geplanten Jobs stoppen.
+> **Wichtig:** Der APScheduler läuft in-process im Cloud Run Container mit expliziter `timezone="Europe/Berlin"`. Ohne den `financebro-keepalive` Cloud Scheduler Job würde der Container bei Inaktivität abschalten und alle APScheduler-Jobs stoppen.
 
 ## Shadow Portfolio Agent
 

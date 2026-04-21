@@ -34,12 +34,13 @@ async def run_shadow_agent():
 
     Der Agent analysiert das Portfolio, trifft Entscheidungen und fuehrt
     Trades aus. Dauert 30-90 Sekunden (Gemini API + yFinance).
+    Manuelle Ausfuehrung umgeht den Tages-Lock (force=True).
     """
     try:
         from middleware.rate_limiter import check_rate_limit
         check_rate_limit("shadow_run")
         from services.shadow_agent import run_shadow_agent_cycle
-        result = await run_shadow_agent_cycle()
+        result = await run_shadow_agent_cycle(force=True)
         return result
     except Exception as e:
         logger.error(f"Shadow Agent Run Fehler: {e}")
@@ -131,4 +132,25 @@ async def save_shadow_config(payload: dict):
         }
     except Exception as e:
         logger.error(f"Shadow Config POST Fehler: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@router.post("/api/shadow-portfolio/reconcile")
+async def reconcile_shadow_portfolio(payload: dict | None = None):
+    """Bereinigt das Shadow-Portfolio von Datenfehlern.
+
+    Erkennt und entfernt doppelte Transaktionen die durch parallele
+    Container-Instanzen (Cloud Run Deployments) entstanden sind.
+    Berechnet Cash und Positionen aus der bereinigten Historie neu.
+
+    Optional: {"exclude_tickers": ["TICKER1", "TICKER2"]} entfernt
+    alle Transaktionen fuer die angegebenen Ticker (z.B. bei fehlerhaften Kursen).
+    """
+    try:
+        from services.shadow_agent import reconcile_shadow_data
+        exclude = (payload or {}).get("exclude_tickers", [])
+        result = await reconcile_shadow_data(exclude_tickers=exclude)
+        return result
+    except Exception as e:
+        logger.error(f"Shadow Reconcile Fehler: {e}")
         return JSONResponse({"error": str(e)}, status_code=500)

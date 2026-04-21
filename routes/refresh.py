@@ -138,18 +138,30 @@ async def trigger_report():
 async def trigger_weekly_digest():
     """Weekly Digest via Cloud Scheduler (Freitag 22:30 CET).
 
-    1. Quick-Price-Refresh (aktuelle Kurse nach US-Börsenschluss)
-    2. Weekly Digest generieren und via Telegram senden
+    1. Warte auf Portfolio-Daten (Cold Start Resilience)
+    2. Quick-Price-Refresh (aktuelle Kurse nach US-Börsenschluss)
+    3. Weekly Digest generieren und via Telegram senden
     """
     if not settings.telegram_configured:
         return {"status": "error", "message": "Telegram nicht konfiguriert"}
 
-    summary = portfolio_data.get("summary")
-    if not summary or not summary.stocks:
-        return {"status": "error", "message": "Keine Portfolio-Daten — bitte zuerst Refresh ausführen"}
-
     async def _send_digest():
         try:
+            # Cold Start Resilience: Warte auf Portfolio-Daten (max 120s)
+            # Cloud Scheduler kann den Container kalt starten, dann sind
+            # noch keine Daten geladen (Startup-Load braucht ~90s)
+            summary = portfolio_data.get("summary")
+            if not summary or not summary.stocks:
+                logger.info("📧 Weekly Digest: Warte auf Portfolio-Daten (Cold Start)...")
+                for _ in range(24):  # 24 × 5s = 120s
+                    await asyncio.sleep(5)
+                    summary = portfolio_data.get("summary")
+                    if summary and summary.stocks:
+                        break
+                else:
+                    logger.error("📧 Weekly Digest: Timeout — keine Portfolio-Daten nach 120s")
+                    return
+
             # Erst Kurse aktualisieren (US-Börsenschluss war um 22:00 CET)
             logger.info("📧 Weekly Digest: Aktualisiere Kurse...")
             await _quick_price_refresh()
