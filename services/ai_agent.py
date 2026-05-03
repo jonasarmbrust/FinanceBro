@@ -82,7 +82,8 @@ def _build_telegram_report(
     ai_insights: str = "",
 ) -> str:
     """Baut den vollständigen Telegram-Report zusammen."""
-    now = datetime.now().strftime("%d.%m.%Y %H:%M")
+    from zoneinfo import ZoneInfo
+    now = datetime.now(tz=ZoneInfo("Europe/Berlin")).strftime("%d.%m.%Y %H:%M")
     sections = []
 
     # Header

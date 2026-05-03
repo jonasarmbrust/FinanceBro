@@ -346,23 +346,9 @@ async def _phase_post_analysis(summary: "PortfolioSummary", stocks: list):
             else:
                 logger.info("🤖 Score-Kommentare übersprungen (außerhalb Analysezeit)")
 
-        # Telegram-Report — Zeitfenster-Gate
-        now_cet = datetime.now(tz=TZ_BERLIN)
-        in_report_window = (
-            now_cet.weekday() < 5
-            and 15 <= now_cet.hour < 18
-            and (now_cet.hour > 15 or now_cet.minute >= 30)
-        )
-        if settings.telegram_configured and settings.ENVIRONMENT == "production" and in_report_window:
-            try:
-                from services.ai_agent import run_daily_report
-                await run_daily_report()
-            except Exception as e:
-                logger.warning(f"AI Agent Report fehlgeschlagen: {e}")
-        elif settings.telegram_configured and settings.ENVIRONMENT == "production":
-            logger.info(f"🤖 AI Agent Report übersprungen (außerhalb Zeitfenster, aktuell {now_cet.strftime('%H:%M')})")
-        elif settings.telegram_configured:
-            logger.info("🤖 AI Agent übersprungen (nur in Production)")
+        # Telegram Daily Report: Wird jetzt dediziert ueber Cloud Scheduler
+        # Job 'financebro-daily-report' um 16:15 CET getriggert (POST /api/trigger-report).
+        # Nicht mehr inline hier, damit Kurse vorher aktualisiert werden.
     except Exception as e:
         logger.warning(f"Analyse-Report Generierung fehlgeschlagen: {e}")
 

@@ -110,28 +110,42 @@ async def trigger_scores_refresh():
 
 @router.post("/api/trigger-report")
 async def trigger_report():
-    """Manuell AI-Report + Telegram senden (für lokale Entwicklung)."""
+    """Täglichen AI-Report + Telegram senden.
+
+    Wird vom Cloud Scheduler täglich um ~16:15 CET getriggert.
+    Hat Cold-Start-Resilience: wartet bis zu 120s auf Portfolio-Daten.
+    Aktualisiert Kurse vor dem Versand für aktuelle Daily Changes.
+    """
     if not settings.telegram_configured:
         return {"status": "error", "message": "Telegram nicht konfiguriert (TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID fehlen)"}
 
-    summary = portfolio_data.get("summary")
-    if not summary or not summary.stocks:
-        return {"status": "error", "message": "Keine Portfolio-Daten — bitte zuerst 'Komplette Analyse' ausführen"}
-
-    scored = [s for s in summary.stocks if s.score and s.position.ticker != "CASH"]
-    if not scored:
-        return {"status": "error", "message": "Keine Scores vorhanden — bitte zuerst 'Komplette Analyse' ausführen"}
-
     async def _send_report():
         try:
+            # Cold Start Resilience: Warte auf Portfolio-Daten (max 120s)
+            summary = portfolio_data.get("summary")
+            if not summary or not summary.stocks:
+                logger.info("📨 Daily Report: Warte auf Portfolio-Daten (Cold Start)...")
+                for _ in range(24):  # 24 × 5s = 120s
+                    await asyncio.sleep(5)
+                    summary = portfolio_data.get("summary")
+                    if summary and summary.stocks:
+                        break
+                else:
+                    logger.error("📨 Daily Report: Timeout — keine Portfolio-Daten nach 120s")
+                    return
+
+            # Kurse aktualisieren für aktuelle Daily Changes
+            logger.info("📨 Daily Report: Aktualisiere Kurse...")
+            await _quick_price_refresh()
+
             from services.ai_agent import run_daily_report
             await run_daily_report()
-            logger.info("✅ Manueller AI-Report gesendet")
+            logger.info("✅ Daily Report gesendet")
         except Exception as e:
-            logger.error(f"Manueller AI-Report fehlgeschlagen: {e}")
+            logger.error(f"Daily Report fehlgeschlagen: {e}")
 
     asyncio.create_task(_send_report())
-    return {"status": "started", "message": f"AI-Report wird gesendet ({len(scored)} Aktien mit Score)..."}
+    return {"status": "started", "message": "Daily Report wird vorbereitet und gesendet..."}
 
 
 @router.post("/api/trigger-weekly-digest")
