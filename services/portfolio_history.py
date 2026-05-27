@@ -181,51 +181,62 @@ def get_history_range(period: str = "ytd") -> list[dict]:
 
 
 async def backfill_from_parqet() -> int:
-    """Einmaliger Backfill aller historischen Daten via Parqet Performance Chart API.
+    """Einmaliger Backfill aller historischen Daten via lokal rekonstruierter Portfolio-Historie.
+    
+    Nutzt die vorhandene build_portfolio_history Engine, die auf den Connect API Activities
+    und yfinance basiert.
     
     Returns: Anzahl der gespeicherten Datenpunkte.
     """
-    from fetchers.parqet import fetch_portfolio_performance_chart
+    from state import portfolio_data
+    from fetchers.parqet import fetch_portfolio_activities_raw
+    from engine.portfolio_history import build_portfolio_history
     
-    logger.info("📊 Starte Backfill über Parqet Performance Chart API...")
+    logger.info("📊 Starte Backfill über rekonstruierte Portfolio-Historie...")
     try:
-        chart_points = await fetch_portfolio_performance_chart(timeframe="max")
-        if not chart_points:
-            logger.warning("Backfill: Keine Chart-Daten von Parqet erhalten")
+        # Activities laden
+        activities = portfolio_data.get("activities")
+        if not activities:
+            activities = await fetch_portfolio_activities_raw()
+        if not activities:
+            logger.warning("Backfill: Keine Activities von Parqet erhalten")
+            return 0
+        
+        # Cash-Bestand bestimmen
+        current_cash = 0.0
+        summary = portfolio_data.get("summary")
+        if summary and summary.stocks:
+            for s in summary.stocks:
+                if s.position.ticker == "CASH":
+                    current_cash = s.position.current_value or s.position.current_price or 0.0
+                    break
+        
+        # Historie über Engine berechnen (period_days=9999 für max)
+        history_data = await build_portfolio_history(
+            activities=activities,
+            period_days=9999,
+            raw_activities=activities,
+            current_cash=current_cash,
+        )
+        
+        if not history_data or not history_data.get("dates"):
+            logger.warning("Backfill: Keine Historien-Daten berechnet")
             return 0
         
         snapshots = []
-        for entry in chart_points:
-            date_str = entry.get("date", "")
-            if not date_str:
-                continue
-            
-            # Format date as YYYY-MM-DD
-            if "T" in date_str:
-                date_str = date_str.split("T")[0]
-            elif " " in date_str:
-                date_str = date_str.split(" ")[0]
-            
-            val = entry.get("totalValue", 0)
+        for i, date_str in enumerate(history_data["dates"]):
+            val = history_data["total"][i]
             if val > 0:
                 snapshots.append({
                     "date": date_str,
                     "total_value": round(val, 2)
                 })
         
-        # Deduplizieren und sortieren
-        seen = set()
-        unique_snapshots = []
-        for s in sorted(snapshots, key=lambda x: x["date"]):
-            if s["date"] not in seen:
-                seen.add(s["date"])
-                unique_snapshots.append(s)
-        
-        if unique_snapshots:
-            history = {"metadata": {}, "daily": unique_snapshots}
+        if snapshots:
+            history = {"metadata": {}, "daily": snapshots}
             save_history(history)
-            logger.info(f"✅ Backfill abgeschlossen: {len(unique_snapshots)} Datenpunkte gespeichert")
-            return len(unique_snapshots)
+            logger.info(f"✅ Backfill abgeschlossen: {len(snapshots)} Datenpunkte gespeichert")
+            return len(snapshots)
         
     except Exception as e:
         logger.error(f"Backfill fehlgeschlagen: {e}")
