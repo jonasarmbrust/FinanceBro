@@ -182,7 +182,7 @@ ISIN_TICKER_MAP = {
     "DE0005933931": "EXS1.DE",    # iShares Core DAX (ETF)
     "IE00BMFKG444": "DBXD.DE",    # Xtrackers MSCI USA IT (ETF)
     "IE00B1TXK627": "EXSA.DE",    # iShares STOXX Europe 600 (ETF)
-    "IE00B1XNHC34": "VGWL.DE",   # Vanguard FTSE All-World (ETF)
+    "IE00B1XNHC34": "IQQH.DE",   # iShares Global Clean Energy (ETF)
     "IE00BLRPQH31": "IUSQ.DE",   # iShares MSCI ACWI (ETF)
     "IE00BYZK4776": "IS3R.DE",   # iShares Core MSCI EM IMI (ETF)
     "IE00BYZK4552": "EUNL.DE",   # iShares Core MSCI World (ETF)
