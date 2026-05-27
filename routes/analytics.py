@@ -82,6 +82,26 @@ async def get_market_indices():
                     progress=False
                 )
                 
+                # Also fetch daily data for stable previous close
+                daily_col = None
+                try:
+                    daily_data = yf.download(
+                        tickers=idx["symbol"],
+                        period="5d",
+                        interval="1d",
+                        progress=False
+                    )
+                    if daily_data is not None and not daily_data.empty and "Close" in daily_data.columns:
+                        daily_col = daily_data["Close"]
+                        if hasattr(daily_col, 'nlevels') and daily_col.nlevels > 1:
+                            if idx["symbol"] in daily_col.columns:
+                                daily_col = daily_col[idx["symbol"]]
+                            else:
+                                daily_col = daily_col.squeeze()
+                        daily_col = daily_col.dropna()
+                except Exception as e:
+                    logger.debug(f"Daily-Daten für {idx['name']} nicht verfügbar: {e}")
+
                 # Also fetch year-start data for YTD
                 ytd_pct = None
                 jan_close = None
@@ -124,13 +144,20 @@ async def get_market_indices():
                     if len(col) >= 1:
                         curr = float(col.iloc[-1].item() if hasattr(col.iloc[-1], 'item') else col.iloc[-1])
                         
-                        last_date = col.index[-1].date()
-                        today = dt.now().date()
-                        
-                        if last_date >= today and len(col) >= 2:
-                            prev = float(col.iloc[-2].item() if hasattr(col.iloc[-2], 'item') else col.iloc[-2])
+                        if daily_col is not None and len(daily_col) >= 1:
+                            latest_date = col.index[-1].date()
+                            last_daily_date = daily_col.index[-1].date()
+                            
+                            if latest_date > last_daily_date:
+                                prev = float(daily_col.iloc[-1].item() if hasattr(daily_col.iloc[-1], 'item') else daily_col.iloc[-1])
+                            else:
+                                prev = float(daily_col.iloc[-2].item() if hasattr(daily_col.iloc[-2], 'item') and len(daily_col) >= 2 else daily_col.iloc[-1])
                         else:
-                            prev = float(col.iloc[-1].item() if hasattr(col.iloc[-1], 'item') else col.iloc[-1])
+                            if len(col) >= 2:
+                                prev = float(col.iloc[-2].item() if hasattr(col.iloc[-2], 'item') else col.iloc[-2])
+                            else:
+                                prev = float(col.iloc[-1].item() if hasattr(col.iloc[-1], 'item') else col.iloc[-1])
+
                             
                         if prev > 0 and not math.isnan(prev) and curr > 0 and not math.isnan(curr):
                             change = curr - prev

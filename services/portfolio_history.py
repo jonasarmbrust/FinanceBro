@@ -181,104 +181,37 @@ def get_history_range(period: str = "ytd") -> list[dict]:
 
 
 async def backfill_from_parqet() -> int:
-    """Einmaliger Backfill aller historischen Daten via Parqet Connect API.
-    
-    Strategie: Monatliche Intervalle von Portfolio-Erstellung bis heute.
-    Jeder API-Call liefert Start- und Endwert des Monats.
+    """Einmaliger Backfill aller historischen Daten via Parqet Performance Chart API.
     
     Returns: Anzahl der gespeicherten Datenpunkte.
     """
-    from fetchers.parqet import _ensure_valid_token, PARQET_CONNECT_API
-    import httpx
+    from fetchers.parqet import fetch_portfolio_performance_chart
     
-    access_token = await _ensure_valid_token()
-    if not access_token or not settings.PARQET_PORTFOLIO_ID:
-        logger.warning("Backfill: Kein Parqet-Token oder Portfolio-ID")
-        return 0
-    
-    headers = {"Authorization": f"Bearer {access_token}"}
-    url = f"{PARQET_CONNECT_API}/performance"
-    
-    # Schritt 1: Gesamtzeitraum ermitteln (max interval)
-    body_max = {
-        "portfolioIds": [settings.PARQET_PORTFOLIO_ID],
-        "interval": {"type": "relative", "value": "max"}
-    }
-    
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(url, headers=headers, json=body_max)
-        if resp.status_code != 200:
-            logger.error(f"Backfill: Parqet API {resp.status_code}")
+    logger.info("📊 Starte Backfill über Parqet Performance Chart API...")
+    try:
+        chart_points = await fetch_portfolio_performance_chart(timeframe="max")
+        if not chart_points:
+            logger.warning("Backfill: Keine Chart-Daten von Parqet erhalten")
             return 0
         
-        data = resp.json()
-        interval = data.get("interval", {})
-        start_str = interval.get("start", "")
-        end_str = interval.get("end", "")
-        
-        if not start_str or not end_str:
-            logger.error("Backfill: Kein Intervall von Parqet")
-            return 0
-        
-        start_date = datetime.strptime(start_str[:10], "%Y-%m-%d")
-        end_date = datetime.strptime(end_str[:10], "%Y-%m-%d")
-        
-        logger.info(f"📊 Backfill: Portfolio-Zeitraum {start_str} → {end_str}")
-        
-        # Schritt 2: Monatliche Snapshots abrufen
         snapshots = []
-        current = start_date
-        
-        while current < end_date:
-            month_end = min(
-                (current.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1),
-                end_date
-            )
+        for entry in chart_points:
+            date_str = entry.get("date", "")
+            if not date_str:
+                continue
             
-            body = {
-                "portfolioIds": [settings.PARQET_PORTFOLIO_ID],
-                "interval": {
-                    "type": "absolute",
-                    "start": current.strftime("%Y-%m-%d"),
-                    "end": month_end.strftime("%Y-%m-%d"),
-                }
-            }
+            # Format date as YYYY-MM-DD
+            if "T" in date_str:
+                date_str = date_str.split("T")[0]
+            elif " " in date_str:
+                date_str = date_str.split(" ")[0]
             
-            try:
-                resp = await client.post(url, headers=headers, json=body)
-                if resp.status_code == 200:
-                    month_data = resp.json()
-                    perf = month_data.get("performance", {})
-                    val = perf.get("valuation", {})
-                    
-                    start_val = val.get("atIntervalStart", 0)
-                    end_val = val.get("atIntervalEnd", 0)
-                    
-                    # Start-Snapshot (erster Tag des Monats)
-                    if start_val > 0:
-                        snapshots.append({
-                            "date": current.strftime("%Y-%m-%d"),
-                            "total_value": round(start_val, 2),
-                        })
-                    
-                    # End-Snapshot (letzter Tag des Monats)
-                    if end_val > 0 and month_end.strftime("%Y-%m-%d") != current.strftime("%Y-%m-%d"):
-                        snapshots.append({
-                            "date": month_end.strftime("%Y-%m-%d"),
-                            "total_value": round(end_val, 2),
-                        })
-                    
-                    logger.debug(
-                        f"  Monat {current.strftime('%Y-%m')}: "
-                        f"{start_val:,.0f}€ → {end_val:,.0f}€"
-                    )
-                else:
-                    logger.warning(f"Backfill {current.strftime('%Y-%m')}: {resp.status_code}")
-            except Exception as e:
-                logger.warning(f"Backfill {current.strftime('%Y-%m')}: {e}")
-            
-            # Nächster Monat
-            current = month_end + timedelta(days=1)
+            val = entry.get("totalValue", 0)
+            if val > 0:
+                snapshots.append({
+                    "date": date_str,
+                    "total_value": round(val, 2)
+                })
         
         # Deduplizieren und sortieren
         seen = set()
@@ -292,8 +225,12 @@ async def backfill_from_parqet() -> int:
             history = {"metadata": {}, "daily": unique_snapshots}
             save_history(history)
             logger.info(f"✅ Backfill abgeschlossen: {len(unique_snapshots)} Datenpunkte gespeichert")
+            return len(unique_snapshots)
         
-        return len(unique_snapshots)
+    except Exception as e:
+        logger.error(f"Backfill fehlgeschlagen: {e}")
+    
+    return 0
 
 
 async def update_today():

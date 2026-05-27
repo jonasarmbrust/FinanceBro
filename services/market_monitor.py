@@ -39,7 +39,7 @@ FEAR_GREED_EXTREME_LOW = 20        # ≤ 20 = Extreme Fear → Alert
 MAX_ALERTS_PER_DAY = 8
 
 # ─────────────────────────────────────────────────────────────
-# State (In-Memory, täglicher Reset)
+# State (Persistent via SQLite, täglicher Reset)
 # ─────────────────────────────────────────────────────────────
 
 _sent_events: set[str] = set()        # Dedup: "event_type:ticker:date"
@@ -48,26 +48,90 @@ _state_date: Optional[date] = None
 _last_fear_greed: Optional[int] = None  # Letzter bekannter F&G-Wert
 
 
+def _load_state():
+    """Lädt den Zustand aus der SQLite-Datenbank."""
+    global _sent_events, _alert_count, _state_date, _last_fear_greed
+    from database import get_system_state
+    
+    # 1. State Date
+    state_date_str = get_system_state("monitor_state_date", "")
+    if state_date_str:
+        try:
+            _state_date = date.fromisoformat(state_date_str)
+        except ValueError:
+            _state_date = None
+    else:
+        _state_date = None
+
+    # 2. Sent Events
+    sent_events_str = get_system_state("monitor_sent_events", "[]")
+    try:
+        _sent_events = set(json.loads(sent_events_str))
+    except Exception:
+        _sent_events = set()
+
+    # 3. Alert Count
+    alert_count_str = get_system_state("monitor_alert_count", "0")
+    try:
+        _alert_count = int(alert_count_str)
+    except ValueError:
+        _alert_count = 0
+
+    # 4. Last Fear & Greed
+    last_fg_str = get_system_state("monitor_last_fear_greed", "")
+    if last_fg_str:
+        try:
+            _last_fear_greed = int(last_fg_str)
+        except ValueError:
+            _last_fear_greed = None
+    else:
+        _last_fear_greed = None
+
+
+def _save_state():
+    """Speichert den Zustand in der SQLite-Datenbank."""
+    from database import set_system_state
+    
+    # 1. State Date
+    if _state_date:
+        set_system_state("monitor_state_date", _state_date.isoformat())
+    
+    # 2. Sent Events
+    set_system_state("monitor_sent_events", json.dumps(list(_sent_events)))
+    
+    # 3. Alert Count
+    set_system_state("monitor_alert_count", str(_alert_count))
+    
+    # 4. Last Fear & Greed
+    if _last_fear_greed is not None:
+        set_system_state("monitor_last_fear_greed", str(_last_fear_greed))
+
+
 def _reset_daily():
     """Reset State bei Tageswechsel."""
     global _sent_events, _alert_count, _state_date
+    _load_state()
     today = date.today()
     if _state_date != today:
         _sent_events = set()
         _alert_count = 0
         _state_date = today
+        _save_state()
 
 
 def _is_duplicate(event_key: str) -> bool:
     """Prüft ob ein Event heute bereits gesendet wurde."""
+    _load_state()
     return event_key in _sent_events
 
 
 def _mark_sent(event_key: str):
     """Markiert ein Event als gesendet."""
     global _alert_count
+    _load_state()
     _sent_events.add(event_key)
     _alert_count += 1
+    _save_state()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -119,6 +183,8 @@ async def check_market_events(force: bool = False) -> dict:
     # Aktualisiere letzten F&G-Wert für nächsten Check
     if summary.fear_greed:
         _last_fear_greed = summary.fear_greed.value
+        _save_state()
+
 
     if not events:
         logger.debug("Market Monitor: Keine Events erkannt")

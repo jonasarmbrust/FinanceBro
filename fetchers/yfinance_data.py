@@ -291,6 +291,7 @@ async def quick_price_update(tickers: list[str]) -> tuple[dict[str, float], dict
         for chunk in chunks:
             try:
                 logger.info(f"[YF-BATCH] Downloading chunk: {chunk}")
+                
                 # Schritt 1: Tageskerzen für Vortagsschluss
                 daily_data = yf.download(
                     chunk,
@@ -300,6 +301,8 @@ async def quick_price_update(tickers: list[str]) -> tuple[dict[str, float], dict
                     threads=False,  # threads=True kann auf Cloud Run hängen
                     timeout=10,     # Verhindert dass Threads bei Connection Drops für immer im Pool hängen bleiben
                 )
+                
+                daily_series = {}
                 if daily_data is not None and not daily_data.empty:
                     logger.info(
                         f"[YF-BATCH] daily_data shape={daily_data.shape}, "
@@ -309,28 +312,24 @@ async def quick_price_update(tickers: list[str]) -> tuple[dict[str, float], dict
                         try:
                             col = _get_close_series(daily_data, ticker)
                             if col is not None and len(col) > 0:
+                                daily_series[ticker] = col
                                 last_close = float(col.iloc[-1])
                                 if last_close > 0 and not math.isnan(last_close):
                                     prices[ticker] = round(last_close, 2)
-                                # Vortagsschluss für Daily-Change-Berechnung
-                                if len(col) >= 1:
-                                    from datetime import datetime as dt
-                                    last_date = col.index[-1].date()
-                                    today = dt.now().date()
                                     
-                                    if last_date >= today and len(col) >= 2:
-                                        prev = float(col.iloc[-2])
-                                    else:
-                                        prev = float(col.iloc[-1])
-                                        
-                                    if prev > 0 and not math.isnan(prev):
-                                        prev_closes[ticker] = prev
+                                # Default previous close (daily fallback)
+                                if len(col) >= 2:
+                                    prev = float(col.iloc[-2])
+                                else:
+                                    prev = float(col.iloc[-1])
+                                if prev > 0 and not math.isnan(prev):
+                                    prev_closes[ticker] = prev
                         except (KeyError, IndexError, TypeError, ValueError) as e:
-                            logger.debug(f"[YF-BATCH] ticker {ticker} parse error: {e}")
+                            logger.debug(f"[YF-BATCH] ticker {ticker} daily parse error: {e}")
                 else:
                     logger.warning(f"[YF-BATCH] daily_data is empty for chunk {chunk}")
 
-                # Schritt 2: Intraday + Pre-Market für aktuellsten Kurs
+                # Schritt 2: Intraday + Pre-Market für aktuellsten Kurs und präzisen Vortagsschluss
                 try:
                     intraday = yf.download(
                         chunk,
@@ -349,6 +348,22 @@ async def quick_price_update(tickers: list[str]) -> tuple[dict[str, float], dict
                                     latest = float(col.iloc[-1])
                                     if latest > 0 and not math.isnan(latest):
                                         prices[ticker] = round(latest, 2)
+                                    
+                                    # Präziser previous close mittels Zeitzonen-freiem Vergleich
+                                    d_col = daily_series.get(ticker)
+                                    if d_col is not None and len(d_col) >= 1:
+                                        latest_date = col.index[-1].date()
+                                        last_daily_date = d_col.index[-1].date()
+                                        
+                                        if latest_date > last_daily_date:
+                                            # Neuer Handelstag gestartet, Vortagsschluss ist das Ende der Daily-Kerze
+                                            prev = float(d_col.iloc[-1])
+                                        else:
+                                            # Gleicher Handelstag oder geschlossen/Wochenende, Vortagsschluss ist die vorletzte Daily-Kerze
+                                            prev = float(d_col.iloc[-2]) if len(d_col) >= 2 else float(d_col.iloc[-1])
+                                            
+                                        if prev > 0 and not math.isnan(prev):
+                                            prev_closes[ticker] = prev
                             except (KeyError, IndexError, TypeError, ValueError):
                                 pass
                 except Exception as e:
@@ -357,6 +372,7 @@ async def quick_price_update(tickers: list[str]) -> tuple[dict[str, float], dict
             except Exception as e:
                 logger.warning(f"[YF-BATCH] EXCEPTION for chunk {chunk}: {type(e).__name__}: {e}")
                 continue
+
 
         # Schritt 3: Daily Change = (aktueller Preis - Vortagsschluss) / Vortagsschluss
         for ticker in valid_tickers:

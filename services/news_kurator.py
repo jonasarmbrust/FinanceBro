@@ -29,6 +29,65 @@ _check_count = 0
 _check_date: Optional[date] = None
 
 
+def _load_state():
+    """Lädt den Zustand aus der SQLite-Datenbank."""
+    global _sent_headlines, _sent_date, _check_count, _check_date
+    from database import get_system_state
+    
+    # 1. Sent Date
+    sent_date_str = get_system_state("kurator_sent_date", "")
+    if sent_date_str:
+        try:
+            _sent_date = date.fromisoformat(sent_date_str)
+        except ValueError:
+            _sent_date = None
+    else:
+        _sent_date = None
+
+    # 2. Sent Headlines
+    sent_headlines_str = get_system_state("kurator_sent_headlines", "[]")
+    try:
+        _sent_headlines = set(json.loads(sent_headlines_str))
+    except Exception:
+        _sent_headlines = set()
+
+    # 3. Check Date
+    check_date_str = get_system_state("kurator_check_date", "")
+    if check_date_str:
+        try:
+            _check_date = date.fromisoformat(check_date_str)
+        except ValueError:
+            _check_date = None
+    else:
+        _check_date = None
+
+    # 4. Check Count
+    check_count_str = get_system_state("kurator_check_count", "0")
+    try:
+        _check_count = int(check_count_str)
+    except ValueError:
+        _check_count = 0
+
+
+def _save_state():
+    """Speichert den Zustand in der SQLite-Datenbank."""
+    from database import set_system_state
+    
+    # 1. Sent Date
+    if _sent_date:
+        set_system_state("kurator_sent_date", _sent_date.isoformat())
+    
+    # 2. Sent Headlines
+    set_system_state("kurator_sent_headlines", json.dumps(list(_sent_headlines)))
+    
+    # 3. Check Date
+    if _check_date:
+        set_system_state("kurator_check_date", _check_date.isoformat())
+    
+    # 4. Check Count
+    set_system_state("kurator_check_count", str(_check_count))
+
+
 # Structured Output Schema für Gemini
 NEWS_ALERT_SCHEMA = {
     "type": "object",
@@ -98,21 +157,31 @@ async def check_portfolio_news(force: bool = False) -> bool:
         logger.debug("News-Kurator übersprungen (Telegram nicht konfiguriert)")
         return False
 
-    # Täglicher Reset
+    # Täglicher Reset / Laden
+    _load_state()
     today = date.today()
+    
+    state_changed = False
     if _sent_date != today:
         _sent_headlines = set()
         _sent_date = today
+        state_changed = True
     if _check_date != today:
         _check_count = 0
         _check_date = today
+        state_changed = True
 
     # Rate Limiting
     if not force:
         _check_count += 1
+        state_changed = True
         if _check_count > _MAX_CHECKS_PER_DAY:
+            _save_state()
             logger.debug(f"News-Kurator: Tägliches Limit ({_MAX_CHECKS_PER_DAY}) erreicht")
             return False
+
+    if state_changed:
+        _save_state()
 
     # Portfolio-Ticker holen
     from state import portfolio_data
@@ -142,6 +211,7 @@ async def check_portfolio_news(force: bool = False) -> bool:
 
     # Deduplizieren
     new_alerts = []
+    _load_state()
     for alert in alerts["alerts"]:
         headline_key = f"{alert['ticker']}:{alert['headline'][:50]}"
         if headline_key not in _sent_headlines:
@@ -149,6 +219,7 @@ async def check_portfolio_news(force: bool = False) -> bool:
             new_alerts.append(alert)
 
     if not new_alerts and not force:
+        _save_state()
         logger.info("📰 News-Kurator: Alle Alerts bereits gesendet (Duplikate)")
         return False
 
@@ -158,8 +229,10 @@ async def check_portfolio_news(force: bool = False) -> bool:
     from services.telegram import send_message
     await send_message(message)
 
+    _save_state()
     logger.info(f"📰 News-Kurator: {len(display_alerts)} Alerts gesendet")
     return True
+
 
 
 async def _fetch_news_alerts(tickers: list[str]) -> dict:

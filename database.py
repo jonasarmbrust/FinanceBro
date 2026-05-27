@@ -132,6 +132,11 @@ def init_db():
             value TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS system_state (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
         -- ── Missing Indexes ──────────────────────────────────────
         CREATE INDEX IF NOT EXISTS idx_snapshots_date ON portfolio_snapshots(date);
         CREATE INDEX IF NOT EXISTS idx_reports_timestamp ON analysis_reports(timestamp);
@@ -140,6 +145,26 @@ def init_db():
     """)
     conn.commit()
     logger.info(f"📦 SQLite-Datenbank initialisiert: {DB_PATH}")
+
+
+# ─── System / App State ─────────────────────────────────────
+
+def get_system_state(key: str, default: str = "") -> str:
+    """Liest einen System-State-Wert aus SQLite."""
+    conn = _get_conn()
+    row = conn.execute("SELECT value FROM system_state WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def set_system_state(key: str, value: str):
+    """Setzt einen System-State-Wert in SQLite."""
+    conn = _get_conn()
+    conn.execute(
+        "INSERT INTO system_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (key, value),
+    )
+    conn.commit()
+
 
 
 # ─── Portfolio Snapshots ────────────────────────────────────
