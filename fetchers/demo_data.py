@@ -183,13 +183,16 @@ def get_demo_portfolio_history(days: int = 180) -> list[dict]:
     return data
 
 
-def get_demo_market_indices() -> list[dict]:
-    """Demo-Marktindizes: S&P 500, Nasdaq, DAX."""
-    return [
-        {"name": "S&P 500", "symbol": "^GSPC", "price": 5248.72, "change": 32.15, "change_pct": 0.62},
-        {"name": "Nasdaq", "symbol": "^IXIC", "price": 16428.89, "change": 128.54, "change_pct": 0.79},
-        {"name": "DAX", "symbol": "^GDAXI", "price": 18205.45, "change": -42.30, "change_pct": -0.23},
-    ]
+def get_demo_market_indices() -> dict:
+    """Demo-Marktindizes: S&P 500, Nasdaq, DAX — inkl. YTD."""
+    return {
+        "indices": [
+            {"name": "S&P 500", "symbol": "^GSPC", "price": 5248.72, "change": 32.15, "change_pct": 0.62, "ytd_pct": 12.35},
+            {"name": "Nasdaq", "symbol": "^IXIC", "price": 16428.89, "change": 128.54, "change_pct": 0.79, "ytd_pct": 15.82},
+            {"name": "DAX", "symbol": "^GDAXI", "price": 18205.45, "change": -42.30, "change_pct": -0.23, "ytd_pct": 8.47},
+        ],
+        "portfolio_ytd": 18.64,
+    }
 
 
 def get_demo_benchmark(symbol: str = "SPY", days: int = 180) -> dict:

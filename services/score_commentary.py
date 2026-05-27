@@ -89,7 +89,7 @@ async def generate_score_commentaries(
         schema = _build_commentary_schema(commentary_tickers)
 
         response = await client.aio.models.generate_content(
-            model="gemini-2.5-flash",
+            model=settings.GEMINI_MODEL_FLASH,
             contents=prompt,
             config={
                 "response_mime_type": "application/json",

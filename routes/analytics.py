@@ -44,7 +44,7 @@ def _set_cached(key: str, data):
 
 @router.get("/api/market-indices")
 async def get_market_indices():
-    """Tagesaktuelle Werte der wichtigsten Indizes (gecacht 15min)."""
+    """Tagesaktuelle Werte der wichtigsten Indizes inkl. YTD (gecacht 15min)."""
     # Demo-Modus: Synthetische Daten
     summary = portfolio_data.get("summary")
     if summary and summary.is_demo:
@@ -64,8 +64,12 @@ async def get_market_indices():
 
     try:
         import yfinance as yf
-        from datetime import datetime as dt
+        from datetime import datetime as dt, timedelta
         import math
+
+        # Compute Jan 1st of current year for YTD calculation
+        year_start = dt(dt.now().year, 1, 1)
+        year_start_end = year_start + timedelta(days=10)  # First 10 days to find first trading day
 
         for idx in indices:
             try:
@@ -77,6 +81,33 @@ async def get_market_indices():
                     prepost=True,
                     progress=False
                 )
+                
+                # Also fetch year-start data for YTD
+                ytd_pct = None
+                jan_close = None
+                try:
+                    ytd_hist = yf.download(
+                        tickers=idx["symbol"],
+                        start=year_start.strftime("%Y-%m-%d"),
+                        end=year_start_end.strftime("%Y-%m-%d"),
+                        interval="1d",
+                        progress=False
+                    )
+                    if ytd_hist is not None and not ytd_hist.empty and "Close" in ytd_hist.columns:
+                        ytd_col = ytd_hist["Close"]
+                        if hasattr(ytd_col, 'nlevels') and ytd_col.nlevels > 1:
+                            if idx["symbol"] in ytd_col.columns:
+                                ytd_col = ytd_col[idx["symbol"]]
+                            else:
+                                ytd_col = ytd_col.squeeze()
+                        ytd_col = ytd_col.dropna()
+                        if len(ytd_col) >= 1:
+                            jan_close = float(ytd_col.iloc[0].item() if hasattr(ytd_col.iloc[0], 'item') else ytd_col.iloc[0])
+                            if not (jan_close > 0 and not math.isnan(jan_close)):
+                                jan_close = None
+                except Exception as e:
+                    logger.debug(f"YTD-Daten für {idx['name']} nicht verfügbar: {e}")
+                    jan_close = None
                 
                 if hist is not None and not hist.empty and "Close" in hist.columns:
                     col = hist["Close"]
@@ -104,12 +135,21 @@ async def get_market_indices():
                         if prev > 0 and not math.isnan(prev) and curr > 0 and not math.isnan(curr):
                             change = curr - prev
                             change_pct = (change / prev) * 100
+                            
+                            # Calculate YTD
+                            try:
+                                if jan_close and jan_close > 0 and not math.isnan(jan_close):
+                                    ytd_pct = round(((curr - jan_close) / jan_close) * 100, 2)
+                            except Exception:
+                                pass
+                            
                             results.append({
                                 "name": idx["name"],
                                 "symbol": idx["symbol"],
                                 "price": round(curr, 2),
                                 "change": round(change, 2),
                                 "change_pct": round(change_pct, 2),
+                                "ytd_pct": ytd_pct,
                             })
                             continue
                             
@@ -119,9 +159,32 @@ async def get_market_indices():
     except Exception as e:
         logger.error(f"Market-Indices fehlgeschlagen: {e}")
 
+    # Calculate portfolio YTD from snapshots
+    portfolio_ytd = None
+    try:
+        from database import load_snapshots
+        from datetime import datetime as dt
+        year_start_str = f"{dt.now().year}-01-01"
+        snapshots = load_snapshots(days=365)
+        if snapshots:
+            # Find first snapshot on or after Jan 1
+            jan_snapshots = [s for s in snapshots if s.get("date", "") >= year_start_str]
+            if jan_snapshots:
+                first_val = jan_snapshots[0].get("total_value", 0)
+                current_summary = portfolio_data.get("summary")
+                current_val = current_summary.total_value if current_summary else 0
+                if first_val > 0 and current_val > 0:
+                    portfolio_ytd = round(((current_val - first_val) / first_val) * 100, 2)
+    except Exception as e:
+        logger.debug(f"Portfolio-YTD Berechnung fehlgeschlagen: {e}")
+
+    response = {
+        "indices": results,
+        "portfolio_ytd": portfolio_ytd,
+    }
     if results:
-        _set_cached("market_indices", results)
-    return results
+        _set_cached("market_indices", response)
+    return response
 
 
 # ─────────────────────────────────────────────────────────────

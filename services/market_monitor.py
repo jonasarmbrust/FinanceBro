@@ -345,7 +345,7 @@ async def _get_event_context(events: list[dict], summary) -> str:
     try:
         config = get_grounded_config()
         response = await client.aio.models.generate_content(
-            model="gemini-2.5-flash",
+            model=settings.GEMINI_MODEL_FLASH,
             contents=prompt,
             config=config,
         )

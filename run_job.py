@@ -36,6 +36,17 @@ async def run_job():
         import traceback
         traceback.print_exc()
 
+    # 1b. Shadow Agent-Zyklus ausführen
+    logger.info("🤖 Starte Shadow Agent-Zyklus...")
+    try:
+        from services.shadow_agent import run_shadow_agent_cycle
+        result = await run_shadow_agent_cycle()
+        logger.info(f"🤖 Shadow Agent-Zyklus beendet: {result}")
+    except Exception as e:
+        logger.error(f"❌ Shadow Agent-Zyklus fehlgeschlagen: {e}")
+        import traceback
+        traceback.print_exc()
+
     # 2. Prüfe ob Finanzdaten vollständig geladen wurden
     summary = portfolio_data.get("summary")
     if not summary or not summary.stocks:

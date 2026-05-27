@@ -1643,25 +1643,134 @@ body {
     }
 }
 
-/* ==================== Market Indices (Header Inline) ==================== */
-.header-indices {
-    display: inline-flex;
-    gap: 0.8rem;
-    margin-left: 1rem;
-    padding-left: 1rem;
-    border-left: 1px solid var(--border-light);
+/* ==================== YTD Performance Cards ==================== */
+.ytd-performance-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 2rem;
 }
 
-.header-index {
-    display: inline-flex;
+.ytd-card {
+    background: var(--bg-card);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1.1rem 1.2rem;
+    display: flex;
     align-items: center;
-    gap: 0.3rem;
-    font-size: 0.78rem;
+    gap: 0.9rem;
+    transition: var(--transition);
+    box-shadow: var(--shadow-sm);
+    position: relative;
+    overflow: hidden;
 }
 
-.header-index-name {
+.ytd-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.ytd-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--border-light);
+}
+
+.ytd-card:hover::before {
+    opacity: 1;
+}
+
+.ytd-card-icon {
+    font-size: 1.5rem;
+    line-height: 1;
+    flex-shrink: 0;
+    width: 36px;
+    text-align: center;
+}
+
+.ytd-card-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+}
+
+.ytd-card-label {
+    font-size: 0.72rem;
+    font-weight: 600;
     color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+}
+
+.ytd-card-value {
+    font-size: 1.35rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.5px;
+    line-height: 1.1;
+}
+
+.ytd-card-daily {
+    font-size: 0.7rem;
     font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.8;
+}
+
+.ytd-badge {
+    display: inline-block;
+    padding: 0.1rem 0.4rem;
+    background: rgba(37, 99, 235, 0.15);
+    border: 1px solid rgba(37, 99, 235, 0.25);
+    border-radius: 99px;
+    font-size: 0.55rem;
+    font-weight: 700;
+    color: var(--accent-blue);
+    letter-spacing: 1px;
+    vertical-align: middle;
+    margin-left: 0.25rem;
+}
+
+/* First card (Portfolio) gets a special gradient accent */
+.ytd-card:first-child {
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), var(--bg-card));
+}
+
+.ytd-card:first-child .ytd-card-label {
+    color: var(--accent-blue);
+}
+
+@media (max-width: 1024px) {
+    .ytd-performance-row {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 480px) {
+    .ytd-performance-row {
+        grid-template-columns: 1fr 1fr;
+        gap: 0.5rem;
+    }
+    .ytd-card {
+        padding: 0.8rem;
+        gap: 0.5rem;
+    }
+    .ytd-card-icon {
+        font-size: 1.2rem;
+        width: 28px;
+    }
+    .ytd-card-value {
+        font-size: 1.1rem;
+    }
 }
 
 /* ==================== Analyse Tab ==================== */

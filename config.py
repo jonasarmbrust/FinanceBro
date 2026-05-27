@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     # AI Finance Agent
     AI_AGENT_TIME: str = "16:30"
 
+    # Gemini-Modelle (zentral konfiguriert, via Env-Vars überschreibbar)
+    GEMINI_MODEL_PRO: str = "gemini-3.1-pro-preview"
+    GEMINI_MODEL_FLASH: str = "gemini-3-flash-preview"
+
     # Cloud Scheduler API Key (für interne Endpoints ohne Basic Auth)
     SCHEDULER_API_KEY: str = ""
 

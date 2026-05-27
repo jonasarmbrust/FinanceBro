@@ -393,7 +393,7 @@ async def _cmd_news(chat_id: str):
             config["cached_content"] = cached
 
         response = await client.aio.models.generate_content(
-            model="gemini-2.5-pro",
+            model=settings.GEMINI_MODEL_PRO,
             contents=prompt,
             config=config,
         )
@@ -404,7 +404,7 @@ async def _cmd_news(chat_id: str):
         if not result:
             raise Exception("Leere Antwort von Gemini Pro")
 
-        model_used = "Gemini 2.5 Pro"
+        model_used = "Gemini 3.1 Pro"
 
     except Exception as e:
         logger.warning(f"Gemini Pro fehlgeschlagen ({e}), versuche Flash Fallback...")
@@ -415,11 +415,11 @@ async def _cmd_news(chat_id: str):
 
             client_fb = get_client()
             response = await client_fb.aio.models.generate_content(
-                model="gemini-2.5-flash",
+                model=settings.GEMINI_MODEL_FLASH,
                 contents=prompt,
             )
             result = response.text.strip() if response.text else "Keine Analyse verfügbar."
-            model_used = "Gemini 2.0 Flash"
+            model_used = "Gemini 3 Flash"
 
         except Exception as e2:
             logger.error(f"/news komplett fehlgeschlagen: {e2}")
@@ -657,7 +657,7 @@ async def _cmd_chat(chat_id: str, question: str):
         config = get_grounded_config()
 
         response = await client.aio.models.generate_content(
-            model="gemini-2.5-pro",
+            model=settings.GEMINI_MODEL_FLASH,
             contents=f"{system_prompt}User-Frage: {question}",
             config=config,
         )
@@ -748,7 +748,7 @@ async def _cmd_risk(chat_id: str, scenario: Optional[str] = None):
         config = get_grounded_config()
 
         response = await client.aio.models.generate_content(
-            model="gemini-2.5-pro",
+            model=settings.GEMINI_MODEL_PRO,
             contents=prompt,
             config=config,
         )
@@ -860,7 +860,7 @@ async def _cmd_wissen_quiz(chat_id: str):
         )
 
         response = await client.aio.models.generate_content(
-            model="gemini-2.5-flash",
+            model=settings.GEMINI_MODEL_FLASH,
             contents=prompt,
         )
 
@@ -969,7 +969,7 @@ async def _process_voice_with_gemini(audio_bytes: bytes, caption: str = "") -> s
     ))
 
     transcript_response = await client.aio.models.generate_content(
-        model="gemini-2.5-flash",
+        model=settings.GEMINI_MODEL_FLASH,
         contents=[Content(role="user", parts=[audio_part, instruction])],
     )
 
@@ -1023,7 +1023,7 @@ async def _process_voice_with_gemini(audio_bytes: bytes, caption: str = "") -> s
     config = get_grounded_config()
 
     response = await client.aio.models.generate_content(
-        model="gemini-2.5-flash",
+        model=settings.GEMINI_MODEL_FLASH,
         contents=f"{system_prompt}USER-FRAGE: {question}",
         config=config,
     )

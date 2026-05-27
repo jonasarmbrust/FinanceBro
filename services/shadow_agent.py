@@ -41,6 +41,50 @@ MAX_SECTOR_PCT = 35.0       # Max Sektor-Konzentration
 MIN_BUY_SCORE = 60.0        # Mindest-Score fuer Kaeufe
 MAX_PRICE_CHANGE_PCT = 50.0 # Max erlaubte Preisaenderung pro Zyklus (%)
 
+# ── Strategie-Modi: Dynamische Schwellwerte ──────────────────
+STRATEGY_OVERRIDES = {
+    "aggressive": {
+        "min_buy_score": 55.0,
+        "min_cash_pct": 3.0,
+        "max_trades_per_cycle": 5,
+        "max_weight_pct": 12.0,
+        "stop_loss_pct": -20.0,
+        "rebalance_weight_trigger": 10.0,
+        "rebalance_score_threshold": 50,
+    },
+    "balanced": {
+        "min_buy_score": 60.0,
+        "min_cash_pct": 5.0,
+        "max_trades_per_cycle": 3,
+        "max_weight_pct": 10.0,
+        "stop_loss_pct": -15.0,
+        "rebalance_weight_trigger": 8.0,
+        "rebalance_score_threshold": 55,
+    },
+    "conservative": {
+        "min_buy_score": 70.0,
+        "min_cash_pct": 10.0,
+        "max_trades_per_cycle": 2,
+        "max_weight_pct": 8.0,
+        "stop_loss_pct": -10.0,
+        "rebalance_weight_trigger": 7.0,
+        "rebalance_score_threshold": 60,
+    },
+}
+
+
+def _get_strategy_adjusted_config() -> dict:
+    """Gibt die Agenten-Config mit strategieabhaengigen Anpassungen zurueck."""
+    from database import shadow_get_config
+    cfg = shadow_get_config()
+    mode = cfg.get("strategy_mode", "balanced")
+    overrides = STRATEGY_OVERRIDES.get(mode, STRATEGY_OVERRIDES["balanced"])
+    # Strategie-Overrides anwenden (ueberschreiben DB-Defaults)
+    for key, value in overrides.items():
+        cfg[key] = value
+    return cfg
+
+
 # ── Gemini Structured Output Schema ──────────────────────────
 SHADOW_DECISION_SCHEMA = {
     "type": "object",
@@ -265,21 +309,36 @@ async def _update_shadow_prices():
          Diese sind bereits korrekt in EUR und konsistent mit dem Start-Kapital.
       2. Fallback (fuer Shadow-Only Positionen): yFinance + CurrencyConverter.
     """
-    from database import shadow_get_positions, shadow_upsert_position
+    from database import shadow_get_positions, shadow_upsert_position, shadow_get_meta
     from state import portfolio_data
 
     positions = shadow_get_positions()
     if not positions:
         return
 
-    # Preismap aus echtem Portfolio aufbauen (bereits EUR)
+    # Check ob wir Plausibilitaets-Check umgehen muessen (z.B. nach langer Inaktivitaet)
+    last_cycle_str = shadow_get_meta("last_cycle_date", "")
+    bypass_plausibility = True
+    if last_cycle_str:
+        try:
+            last_cycle_dt = datetime.strptime(last_cycle_str, "%Y-%m-%d").date()
+            days_elapsed = (datetime.now(tz=TZ_BERLIN).date() - last_cycle_dt).days
+            if days_elapsed <= 5:
+                bypass_plausibility = False
+        except Exception:
+            pass
+
+    # Sektoren und Preise aus echtem Portfolio aufbauen (bereits EUR)
     real_prices: dict[str, float] = {}
+    real_sectors: dict[str, str] = {}
     summary = portfolio_data.get("summary")
     if summary and summary.stocks:
         for stock in summary.stocks:
             t = stock.position.ticker
             if stock.position.shares > 0:
                 real_prices[t] = stock.position.current_value / stock.position.shares
+            if stock.position.sector and stock.position.sector != "Unknown":
+                real_sectors[t] = stock.position.sector
 
     # Shadow-Only Ticker (nicht im echten Portfolio) brauchen yFinance
     shadow_only_tickers = [
@@ -302,10 +361,18 @@ async def _update_shadow_prices():
             logger.warning(f"yFinance-Fallback fehlgeschlagen: {e}")
 
     updated = 0
-    skipped_anomalies = []
     for pos in positions:
         ticker = pos["ticker"]
         price_eur = real_prices.get(ticker) or yf_prices_eur.get(ticker)
+        
+        # Sektor aktualisieren falls "Unknown"
+        sector = pos["sector"]
+        if not sector or sector == "Unknown":
+            sector = real_sectors.get(ticker) or "Unknown"
+            if sector == "Unknown":
+                # Fallback ueber Metadaten-Aufloesung
+                _, sector = _get_stock_meta(ticker, summary)
+
         if price_eur and price_eur > 0:
             # ── Preis-Plausibilitaets-Check ──────────────────
             # Verhindert kuenstlichen P&L durch fehlerhafte yFinance-Daten
@@ -314,13 +381,30 @@ async def _update_shadow_prices():
             if old_price > 0:
                 change_pct = abs(price_eur - old_price) / old_price * 100
                 if change_pct > MAX_PRICE_CHANGE_PCT:
-                    skipped_anomalies.append(ticker)
-                    logger.warning(
-                        f"Shadow Preis-Anomalie: {ticker} "
-                        f"{old_price:.2f} -> {price_eur:.2f} EUR "
-                        f"({change_pct:+.1f}%) — Update uebersprungen"
-                    )
-                    continue
+                    # Check ob wir Plausibilitaets-Check fuer diese Position umgehen muessen (z.B. nach langer Inaktivitaet)
+                    bypass_position_plausibility = True
+                    last_updated_str = pos.get("last_updated", "")
+                    if last_updated_str:
+                        try:
+                            last_updated_dt = datetime.fromisoformat(last_updated_str)
+                            days_elapsed = (datetime.now(tz=TZ_BERLIN) - last_updated_dt).days
+                            if days_elapsed <= 5:
+                                bypass_position_plausibility = False
+                        except Exception:
+                            pass
+                    
+                    if not bypass_position_plausibility:
+                        logger.warning(
+                            f"Shadow Preis-Anomalie: {ticker} "
+                            f"{old_price:.2f} -> {price_eur:.2f} EUR "
+                            f"({change_pct:+.1f}%) — Update uebersprungen"
+                        )
+                        continue
+                    else:
+                        logger.info(
+                            f"Shadow Preis-Pruefung fuer {ticker} umgangen (letztes Update vor {days_elapsed if last_updated_str else 'N/A'} Tagen), "
+                            f"passe Preis an: {old_price:.2f} -> {price_eur:.2f} EUR"
+                        )
 
             shadow_upsert_position(
                 ticker=ticker,
@@ -328,7 +412,7 @@ async def _update_shadow_prices():
                 shares=pos["shares"],
                 avg_cost_eur=pos["avg_cost_eur"],
                 current_price_eur=price_eur,
-                sector=pos["sector"],
+                sector=sector,
             )
             updated += 1
 
@@ -411,16 +495,98 @@ def _accrue_dividends():
 
 
 # ─────────────────────────────────────────────────────────────
+# Trading-Historie aufbauen
+# ─────────────────────────────────────────────────────────────
+
+def _build_trade_history(limit: int = 10) -> str:
+    """Lädt die letzten Trades und formatiert sie als Kontext für den Agent."""
+    from database import shadow_get_transactions
+
+    txs = shadow_get_transactions(limit=limit + 5)  # Etwas mehr laden, init filtern
+    # init-Transaktionen ausfiltern
+    txs = [t for t in txs if t["action"] != "init"][:limit]
+
+    if not txs:
+        return "  (Noch keine Trades ausgefuehrt)"
+
+    lines = []
+    for tx in txs:
+        date = tx["timestamp"][:10]
+        action_emoji = "🟢" if tx["action"] == "buy" else "🔴"
+        lines.append(
+            f"  {action_emoji} {date} {tx['action'].upper()} {tx['ticker']} — "
+            f"{tx['shares']:.4f} Stk. @ {tx['price_eur']:.2f} EUR = {tx['total_eur']:,.2f} EUR"
+            f"{' | ' + tx['reason'][:80] if tx.get('reason') else ''}"
+        )
+    return "\n".join(lines)
+
+
+def _build_performance_review(summary) -> str:
+    """Bewertet die letzten Trades: War die Entscheidung rueckblickend richtig?"""
+    from database import shadow_get_transactions, shadow_get_positions
+
+    txs = shadow_get_transactions(limit=30)
+    txs = [t for t in txs if t["action"] in ("buy", "sell")]
+
+    if not txs:
+        return "  (Noch keine Trades zur Bewertung)"
+
+    # Aktuelle Preise aus allen verfuegbaren Quellen sammeln
+    current_prices: dict[str, float] = {}
+    if summary and summary.stocks:
+        for stock in summary.stocks:
+            t = stock.position.ticker
+            if stock.position.shares > 0:
+                current_prices[t] = stock.position.current_value / stock.position.shares
+    for p in shadow_get_positions():
+        if p["ticker"] not in current_prices and p["current_price_eur"] > 0:
+            current_prices[p["ticker"]] = p["current_price_eur"]
+
+    lines = []
+
+    # Letzte Sells bewerten: Preis danach gesunken = gute Entscheidung
+    for tx in [t for t in txs if t["action"] == "sell"][:5]:
+        ticker = tx["ticker"]
+        sell_price = tx["price_eur"]
+        current = current_prices.get(ticker)
+        date = tx["timestamp"][:10]
+        if current and sell_price > 0:
+            change = (current - sell_price) / sell_price * 100
+            emoji = "\u2705" if change < 0 else "\u274c"  # Gut wenn Preis danach fiel
+            lines.append(
+                f"  {emoji} SELL {ticker} ({date}) @ {sell_price:.2f} \u2192 jetzt {current:.2f} EUR ({change:+.1f}%)"
+            )
+
+    # Letzte Buys bewerten: Preis danach gestiegen = gute Entscheidung
+    for tx in [t for t in txs if t["action"] == "buy"][:5]:
+        ticker = tx["ticker"]
+        buy_price = tx["price_eur"]
+        current = current_prices.get(ticker)
+        date = tx["timestamp"][:10]
+        if current and buy_price > 0:
+            change = (current - buy_price) / buy_price * 100
+            emoji = "\u2705" if change > 0 else "\u274c"  # Gut wenn Preis danach stieg
+            lines.append(
+                f"  {emoji} BUY {ticker} ({date}) @ {buy_price:.2f} \u2192 jetzt {current:.2f} EUR ({change:+.1f}%)"
+            )
+
+    if not lines:
+        return "  (Keine Preisdaten fuer Bewertung verfuegbar)"
+
+    return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────────────
 # Kontext aufbauen (Perception)
 # ─────────────────────────────────────────────────────────────
 
 def _build_agent_context(summary) -> dict:
     """Baut den vollstaendigen Agenten-Kontext auf."""
-    from database import shadow_get_positions, shadow_get_cash, shadow_get_meta, shadow_get_config
+    from database import shadow_get_positions, shadow_get_cash, shadow_get_meta
 
     positions = shadow_get_positions()
     cash = shadow_get_cash()
-    cfg = shadow_get_config()
+    cfg = _get_strategy_adjusted_config()
 
     # Shadow-Portfolio-Wert berechnen
     invested_value = sum(p["shares"] * p["current_price_eur"] for p in positions)
@@ -437,6 +603,23 @@ def _build_agent_context(summary) -> dict:
         sec = p.get("sector", "Unknown")
         sectors[sec] = sectors.get(sec, 0) + p["shares"] * p["current_price_eur"]
     sector_pcts = {k: round(v / total_value * 100, 1) for k, v in sectors.items()} if total_value > 0 else {}
+
+    # Score-Lookup aus echtem Portfolio + Tech-Radar aufbauen
+    score_lookup: dict[str, tuple[float, str]] = {}  # ticker -> (score, rating)
+    for stock in summary.stocks:
+        if stock.position.ticker == "CASH":
+            continue
+        if stock.score:
+            score_lookup[stock.position.ticker] = (
+                round(stock.score.total_score, 1),
+                stock.score.rating.value,
+            )
+    for pick in (summary.tech_picks or []):
+        if pick.ticker not in score_lookup and pick.score:
+            score_lookup[pick.ticker] = (
+                round(pick.score, 1),
+                "buy" if pick.score >= 65 else "hold",
+            )
 
     # Echtes Portfolio als Vergleich
     real_positions = []
@@ -471,6 +654,8 @@ def _build_agent_context(summary) -> dict:
                     "value_eur": round(p["shares"] * p["current_price_eur"], 2),
                     "weight_pct": round(p["shares"] * p["current_price_eur"] / total_value * 100, 1) if total_value > 0 else 0,
                     "pnl_pct": round((p["current_price_eur"] - p["avg_cost_eur"]) / p["avg_cost_eur"] * 100, 2) if p["avg_cost_eur"] > 0 else 0,
+                    "score": score_lookup.get(p["ticker"], (None, None))[0],
+                    "rating": score_lookup.get(p["ticker"], (None, None))[1],
                     "sector": p["sector"],
                 }
                 for p in positions
@@ -495,6 +680,9 @@ def _build_agent_context(summary) -> dict:
             "max_sector_pct": cfg["max_sector_pct"],
             "min_buy_score": cfg["min_buy_score"],
             "strategy_mode": cfg["strategy_mode"],
+            "stop_loss_pct": cfg.get("stop_loss_pct", -15.0),
+            "rebalance_weight_trigger": cfg.get("rebalance_weight_trigger", 8.0),
+            "rebalance_score_threshold": cfg.get("rebalance_score_threshold", 55),
         },
     }
 
@@ -681,7 +869,8 @@ async def _call_gemini_agent(context: dict, candidates: list[dict]) -> dict:
     system_prompt = (
         "Du bist ein autonomer AI-Portfolio-Agent fuer FinanceBro. "
         "Du verwaltest ein fiktives Shadow-Portfolio mit Paper-Money. "
-        "Deine Aufgabe: Analyse das Portfolio taeglich und triff eigenstaendig Kauf/Verkauf-Entscheidungen.\n\n"
+        "Deine Aufgabe: Analyse das Portfolio taeglich und triff eigenstaendig Kauf/Verkauf-Entscheidungen. "
+        "Du sollst AKTIV handeln wenn sich Gelegenheiten bieten — Passivitaet ist KEIN gutes Ergebnis.\n\n"
         f"SHADOW-PORTFOLIO STATUS:\n"
         f"  Gesamtwert: {shadow['total_value']:,.2f} EUR\n"
         f"  Cash: {shadow['cash']:,.2f} EUR ({shadow['cash_pct']}%)\n"
@@ -699,12 +888,24 @@ async def _call_gemini_agent(context: dict, candidates: list[dict]) -> dict:
         f"  - Max {rules['max_trades_per_cycle']} Trades pro Zyklus\n"
         f"  - Max {rules['max_sector_pct']}% Sektor-Konzentration\n"
         f"  - Mindest-Score fuer Kaeufe: {rules['min_buy_score']}\n\n"
-        "STRATEGIE:\n"
-        f"  - Kaufe Aktien mit Score >= {rules['min_buy_score']} und Rating BUY\n"
-        "  - Verkaufe Aktien mit Score < 40 (SELL-Rating) oder starker Uebergewichtung\n"
-        "  - Fuer Komplett-Verkauf: setze sell_all=true (amount_eur wird dann ignoriert)\n"
-        "  - Nutze die verfuegbaren Tools um aktuelle Daten abzurufen\n"
-        "  - Begruende jede Entscheidung praezise (Score, Sektor, Portfolio-Fit)\n"
+        "AKTIVE HANDELSSTRATEGIE:\n"
+        f"  1. KAUFEN: Aktien mit Score >= {rules['min_buy_score']} und Rating BUY\n"
+        "  2. VERKAUFEN bei diesen Signalen (pruefe JEDE Position):\n"
+        "     - Score < 40 (SELL-Rating) → Komplett verkaufen (sell_all=true)\n"
+        f"     - P&L < {rules.get('stop_loss_pct', -15)}% UND Score < 50 → Stop-Loss, Verluste begrenzen\n"
+        f"     - Gewichtung > {rules.get('rebalance_weight_trigger', 8)}% UND Score < {rules.get('rebalance_score_threshold', 55)} → Uebergewichtung reduzieren\n"
+        "  3. REBALANCING — ERSETZE schwache Positionen durch bessere:\n"
+        "     - Wenn ein Kandidat Score >= 65 hat und eine bestehende Position Score < 50 hat,\n"
+        "       verkaufe die schwache Position und kaufe den besseren Kandidaten\n"
+        "     - Wenn Cash > 15% verfuegbar ist, investiere aktiv in die besten BUY-Kandidaten\n"
+        "  4. Fuer Komplett-Verkauf: setze sell_all=true (amount_eur wird dann ignoriert)\n"
+        "  5. Nutze die verfuegbaren Tools um aktuelle Daten abzurufen\n"
+        "  6. Begruende jede Entscheidung praezise (Score, Sektor, Portfolio-Fit)\n\n"
+        "WICHTIG:\n"
+        "  - Pruefe die Trading-Historie um keine widersprüchlichen Trades zu machen\n"
+        "  - Kaufe NICHT zurueck was du in den letzten 5 Tagen verkauft hast (ausser Score hat sich deutlich verbessert)\n"
+        "  - Wenn du keine guten Gruende fuer Trades findest, ist 'keine Aktion' auch akzeptabel\n"
+        "  - Aber sei nicht zu passiv: Wenn BUY-Kandidaten mit Score > 65 existieren und Cash verfuegbar ist, handle!\n"
         "  - Antworte auf Deutsch\n"
     )
 
@@ -718,20 +919,34 @@ async def _call_gemini_agent(context: dict, candidates: list[dict]) -> dict:
     positions_text = "\n".join(
         f"  {p['ticker']}: {p['shares']:.4f} Stk. @ {p['avg_cost_eur']:.2f} EUR, "
         f"Wert {p['value_eur']:,.2f} EUR ({p['weight_pct']:.1f}%), "
-        f"P&L {p['pnl_pct']:+.1f}%, Sektor {p['sector']}"
+        f"P&L {p['pnl_pct']:+.1f}%, "
+        f"Score {p['score'] or 'N/A'}{' ' + p['rating'].upper() if p.get('rating') else ''}, "
+        f"Sektor {p['sector']}"
         for p in shadow.get("positions", [])
     )
 
+    # Trading-Historie + Performance-Review laden
+    trade_history = _build_trade_history(limit=10)
+    perf_review = _build_performance_review(summary)
+
+    stop_loss = rules.get('stop_loss_pct', -15)
+    rebal_weight = rules.get('rebalance_weight_trigger', 8)
+    rebal_score = rules.get('rebalance_score_threshold', 55)
+
     user_prompt = (
         f"Fuehre den taeglichen Shadow-Portfolio-Zyklus durch.\n\n"
-        f"AKTUELLE POSITIONEN:\n{positions_text or '  (Keine Positionen)'}\n\n"
+        f"AKTUELLE POSITIONEN (inkl. Score):\n{positions_text or '  (Keine Positionen)'}\n\n"
+        f"PERFORMANCE-REVIEW (waren deine letzten Trades richtig?):\n{perf_review}\n\n"
+        f"LETZTE TRADES (Deine bisherigen Entscheidungen):\n{trade_history}\n\n"
         f"KANDIDATEN FUER TRADES:\n{candidates_text or '  (Keine Kandidaten)'}\n\n"
-        "Nutze die verfuegbaren Tools um mehr Daten abzurufen, dann entscheide:\n"
-        "1. Welche Positionen sollen verkauft werden? (Schlechter Score, Uebergewichtung, SELL-Signale)\n"
-        "2. Welche neuen Positionen sollen gekauft werden? (BUY Score >= 60)\n"
-        "3. Wie ist die allgemeine Marktlage zu bewerten?\n\n"
-        f"Maximale Cash-Verfuegbar fuer Kaeufe: {max(0, shadow['cash'] - shadow['total_value'] * rules['min_cash_pct'] / 100):,.0f} EUR\n"
-        "Erstelle einen konkreten Trade-Plan als strukturiertes JSON-Objekt."
+        "Analysiere systematisch:\n"
+        f"1. Welche Positionen sollen VERKAUFT werden? (Score < 40, P&L < {stop_loss}% + Score < 50, Gewichtung > {rebal_weight}% + Score < {rebal_score})\n"
+        "2. Welche HOLD-Positionen (Score 40-59) koennen durch bessere BUY-Kandidaten ERSETZT werden?\n"
+        f"3. Welche neuen Positionen sollen GEKAUFT werden? (BUY Score >= {rules['min_buy_score']:.0f}, Sektor-Diversifikation beachten)\n"
+        "4. Wie ist die allgemeine Marktlage zu bewerten?\n"
+        "5. Lerne aus dem Performance-Review: Wiederhole erfolgreiche Muster, vermeide Fehler.\n\n"
+        f"Verfuegbares Cash fuer Kaeufe: {max(0, shadow['cash'] - shadow['total_value'] * rules['min_cash_pct'] / 100):,.0f} EUR\n"
+        "Erstelle einen konkreten Trade-Plan."
     )
 
     # Tool-Deklarationen
@@ -740,6 +955,8 @@ async def _call_gemini_agent(context: dict, candidates: list[dict]) -> dict:
     config = {
         "tools": [Tool(function_declarations=tool_declarations)],
         "system_instruction": system_prompt,
+        "response_mime_type": "application/json",
+        "response_schema": SHADOW_DECISION_SCHEMA,
     }
 
     cached = get_cached_content()
@@ -751,7 +968,7 @@ async def _call_gemini_agent(context: dict, candidates: list[dict]) -> dict:
         contents = [Content(role="user", parts=[Part(text=user_prompt)])]
         response = await asyncio.wait_for(
             client.aio.models.generate_content(
-                model="gemini-2.5-pro",
+                model=settings.GEMINI_MODEL_PRO,
                 contents=contents,
                 config=config,
             ),
@@ -784,7 +1001,7 @@ async def _call_gemini_agent(context: dict, candidates: list[dict]) -> dict:
             contents.append(Content(role="user", parts=tool_results))
             response = await asyncio.wait_for(
                 client.aio.models.generate_content(
-                    model="gemini-2.5-pro",
+                    model=settings.GEMINI_MODEL_PRO,
                     contents=contents,
                     config=config,
                 ),
@@ -837,14 +1054,14 @@ async def _execute_trades(trades: list[dict], summary) -> list[dict]:
     from database import (
         shadow_get_cash, shadow_set_cash,
         shadow_get_positions, shadow_upsert_position, shadow_remove_position,
-        shadow_add_transaction, shadow_get_config,
+        shadow_add_transaction,
         shadow_get_meta, shadow_set_meta,
     )
 
     if not trades:
         return []
 
-    cfg = shadow_get_config()
+    cfg = _get_strategy_adjusted_config()
     max_trades = cfg["max_trades_per_cycle"]
     min_trade_eur = cfg["min_trade_eur"]
     min_cash_pct = cfg["min_cash_pct"]
@@ -856,6 +1073,11 @@ async def _execute_trades(trades: list[dict], summary) -> list[dict]:
 
     executed = []
     trades_count = 0
+
+    # Positionen VOR der Schleife laden (wird nach jedem Trade aktualisiert)
+    cash = shadow_get_cash()
+    positions = {p["ticker"]: p for p in shadow_get_positions()}
+    total_value = sum(p["shares"] * p["current_price_eur"] for p in positions.values()) + cash
 
     for trade in trades_sorted:
         if trades_count >= max_trades:
@@ -895,6 +1117,7 @@ async def _execute_trades(trades: list[dict], summary) -> list[dict]:
                     )
                     continue
 
+        # Nach jedem Trade: Cash + Positionen neu laden
         cash = shadow_get_cash()
         positions = {p["ticker"]: p for p in shadow_get_positions()}
         total_value = sum(p["shares"] * p["current_price_eur"] for p in positions.values()) + cash

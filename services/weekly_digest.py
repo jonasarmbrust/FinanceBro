@@ -142,7 +142,7 @@ async def _generate_ai_summary(digest_data: dict) -> str:
         )
 
         response = await client.aio.models.generate_content(
-            model="gemini-2.5-flash",
+            model=settings.GEMINI_MODEL_FLASH,
             contents=prompt,
         )
 

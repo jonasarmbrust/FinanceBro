@@ -165,7 +165,7 @@ async def cache_portfolio_context(summary) -> Optional[str]:
         import asyncio
         cache = await asyncio.wait_for(
             client.aio.caches.create(
-                model="gemini-2.5-pro",
+                model=settings.GEMINI_MODEL_PRO,
                 config={
                     "contents": [
                         Content(

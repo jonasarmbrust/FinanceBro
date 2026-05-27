@@ -1427,14 +1427,67 @@ async function renderMarketIndices() {
         if (!res.ok) return;
         const data = await res.json();
 
-        const container = document.getElementById('headerIndices');
-        if (!container) return;
+        // Handle both old format (array) and new format (object with indices + portfolio_ytd)
+        const indices = Array.isArray(data) ? data : (data.indices || []);
+        const portfolioYtd = data.portfolio_ytd;
 
-        container.innerHTML = data.map(idx => {
-            const sign = idx.change_pct >= 0 ? '+' : '';
-            const color = idx.change_pct >= 0 ? 'var(--green)' : 'var(--red)';
-            return `<span class="header-index"><span class="header-index-name">${idx.name}</span> <span style="color:${color};font-weight:700">${sign}${idx.change_pct.toFixed(2)}%</span></span>`;
-        }).join('');
+        // Helper to format YTD value
+        const formatYtd = (val) => {
+            if (val == null) return '–';
+            const sign = val >= 0 ? '+' : '';
+            return `${sign}${val.toFixed(2)}%`;
+        };
+        const ytdColor = (val) => {
+            if (val == null) return 'var(--text-muted)';
+            return val >= 0 ? 'var(--green)' : 'var(--red)';
+        };
+        const formatDaily = (val) => {
+            if (val == null) return '';
+            const sign = val >= 0 ? '+' : '';
+            return `Heute: ${sign}${val.toFixed(2)}%`;
+        };
+
+        // Populate portfolio YTD
+        const portfolioEl = document.getElementById('ytdPortfolioValue');
+        if (portfolioEl) {
+            portfolioEl.textContent = formatYtd(portfolioYtd);
+            portfolioEl.style.color = ytdColor(portfolioYtd);
+        }
+        // Add subtle border accent to portfolio card
+        const portfolioCard = document.getElementById('ytdPortfolio');
+        if (portfolioCard && portfolioYtd != null) {
+            portfolioCard.style.borderColor = portfolioYtd >= 0
+                ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)';
+        }
+
+        // Map symbol -> element IDs
+        const mapping = {
+            '^GSPC': { value: 'ytdSP500Value', daily: 'ytdSP500Daily', card: 'ytdSP500' },
+            '^IXIC': { value: 'ytdNasdaqValue', daily: 'ytdNasdaqDaily', card: 'ytdNasdaq' },
+            '^GDAXI': { value: 'ytdDAXValue', daily: 'ytdDAXDaily', card: 'ytdDAX' },
+        };
+
+        for (const idx of indices) {
+            const m = mapping[idx.symbol];
+            if (!m) continue;
+            
+            const valEl = document.getElementById(m.value);
+            const dailyEl = document.getElementById(m.daily);
+            const cardEl = document.getElementById(m.card);
+            
+            if (valEl) {
+                valEl.textContent = formatYtd(idx.ytd_pct);
+                valEl.style.color = ytdColor(idx.ytd_pct);
+            }
+            if (dailyEl) {
+                dailyEl.textContent = formatDaily(idx.change_pct);
+                dailyEl.style.color = ytdColor(idx.change_pct);
+            }
+            if (cardEl && idx.ytd_pct != null) {
+                cardEl.style.borderColor = idx.ytd_pct >= 0
+                    ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)';
+            }
+        }
     } catch (e) { console.log('Market-Indices nicht verfügbar'); }
 }
 

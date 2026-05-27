@@ -494,7 +494,7 @@ async def _call_gemini_with_tools(
 
     # Schritt 1: Initiale Anfrage
     response = await client.aio.models.generate_content(
-        model="gemini-2.5-pro",
+        model=settings.GEMINI_MODEL_PRO,
         contents=user_prompt,
         config=config,
     )
@@ -539,7 +539,7 @@ async def _call_gemini_with_tools(
         contents.append(Content(role="user", parts=tool_results))
 
         response = await client.aio.models.generate_content(
-            model="gemini-2.5-pro",
+            model=settings.GEMINI_MODEL_PRO,
             contents=contents,
             config=config,
         )
@@ -774,7 +774,7 @@ async def _call_gemini_chat(
     # Gemini-Call (async um Event-Loop nicht zu blockieren)
     response = await asyncio.wait_for(
         client.aio.models.generate_content(
-            model="gemini-2.5-pro",
+            model=settings.GEMINI_MODEL_PRO,
             contents=contents,
             config=config,
         ),
@@ -821,7 +821,7 @@ async def _call_gemini_chat(
 
         response = await asyncio.wait_for(
             client.aio.models.generate_content(
-                model="gemini-2.5-pro",
+                model=settings.GEMINI_MODEL_PRO,
                 contents=all_contents,
                 config=config,
             ),

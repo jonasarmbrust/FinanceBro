@@ -201,7 +201,7 @@ async def _fetch_news_alerts(tickers: list[str]) -> dict:
     config["response_schema"] = NEWS_ALERT_SCHEMA
 
     response = await client.aio.models.generate_content(
-        model="gemini-2.5-flash",
+        model=settings.GEMINI_MODEL_FLASH,
         contents=prompt,
         config=config,
     )

@@ -98,7 +98,7 @@ async def enrich_with_ai_analysis(
         )
 
         response = await client.aio.models.generate_content(
-            model="gemini-2.5-pro",
+            model=settings.GEMINI_MODEL_FLASH,
             contents=prompt,
             config=get_grounded_config(),
         )
