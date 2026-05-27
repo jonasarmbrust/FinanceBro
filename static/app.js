@@ -1897,7 +1897,7 @@ async function loadPerformanceChart(days, btn) {
 
         const labels = data.map(d => {
             const dt = new Date(d.date);
-            return dt.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+            return dt.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
         });
         const values = data.map(d => d.total_value);
         const isPositive = values[values.length - 1] >= values[0];
@@ -2753,7 +2753,7 @@ function renderHistorieChart(data) {
                                 const d = dates[index];
                                 if (!d) return '';
                                 const parts = d.split('-');
-                                return `${parts[2]}.${parts[1]}`;
+                                return `${parts[2]}.${parts[1]}.${parts[0]}`;
                             }
                             return '';
                         }

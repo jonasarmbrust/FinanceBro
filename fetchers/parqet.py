@@ -195,7 +195,7 @@ ISIN_TICKER_MAP = {
     "US91332U1016": "U",          # Unity Software
     "US5324571083": "LLY",        # Eli Lilly
     "US1696561059": "CHPT",       # Chipotle (ex-CMG) — prüfe Ticker
-    "US7960542030": "SMSN.IL",    # Samsung SDI (London)
+    "US7960542030": "XSDG.SG",    # Samsung SDI GDR (Börse Stuttgart)
     "KYG6683N1034": "NU",         # Nubank (NU, ex-NIO)
     "US0404131064": "ARM",        # ARM Holdings (Class A)
     "US0404132054": "ARM",        # ARM Holdings (Class A) alternate
