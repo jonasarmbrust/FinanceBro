@@ -241,6 +241,8 @@ async def backfill_from_parqet() -> int:
                 })
         
         if snapshots:
+            # Snapshots mit offiziellen Parqet Meilensteinen abgleichen
+            snapshots = await align_snapshots_with_parqet(snapshots)
             history = {"metadata": {}, "daily": snapshots}
             save_history(history)
             logger.info(f"✅ Backfill abgeschlossen: {len(snapshots)} Datenpunkte gespeichert")
@@ -311,8 +313,147 @@ async def update_today():
                 # Sortieren (falls out-of-order)
                 history["daily"].sort(key=lambda x: x["date"])
             
+            # Snapshots täglich mit offiziellen Parqet Meilensteinen abgleichen
+            history["daily"] = await align_snapshots_with_parqet(history["daily"])
+            
             save_history(history)
             logger.info(f"📸 History Update: {today_str} — €{end_val:,.2f}")
             
     except Exception as e:
         logger.warning(f"History Update fehlgeschlagen: {e}")
+
+
+async def _fetch_parqet_milestones() -> list[tuple[str, float]]:
+    """Holt die offiziellen Parqet Meilenstein-Bewertungen für die Kalibrierung."""
+    from fetchers.parqet import _ensure_valid_token, PARQET_CONNECT_API
+    import httpx
+    
+    access_token = await _ensure_valid_token()
+    if not access_token or not settings.PARQET_PORTFOLIO_ID:
+        return []
+        
+    intervals = ["1d", "1w", "1m", "3m", "6m", "ytd", "1y"]
+    milestones = []
+    
+    headers = {"Authorization": f"Bearer {access_token}"}
+    url = f"{PARQET_CONNECT_API}/performance"
+    
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r_today = await client.post(
+                url, 
+                json={"portfolioIds": [settings.PARQET_PORTFOLIO_ID], "interval": {"type": "relative", "value": "1d"}},
+                headers=headers
+            )
+            if r_today.status_code == 200:
+                data = r_today.json()
+                today_str = data.get("interval", {}).get("end")
+                today_val = data.get("performance", {}).get("valuation", {}).get("atIntervalEnd", 0)
+                if today_str and today_val > 0:
+                    milestones.append((today_str, today_val))
+                    
+            for val in intervals:
+                resp = await client.post(
+                    url,
+                    json={"portfolioIds": [settings.PARQET_PORTFOLIO_ID], "interval": {"type": "relative", "value": val}},
+                    headers=headers
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    start_date = data.get("interval", {}).get("start")
+                    start_val = data.get("performance", {}).get("valuation", {}).get("atIntervalStart", 0)
+                    if start_date and start_val > 0:
+                        milestones.append((start_date, start_val))
+    except Exception as e:
+        logger.warning(f"Fehler beim Laden der Parqet Meilensteine: {e}")
+        
+    unique_milestones = {}
+    for date_str, val in milestones:
+        unique_milestones[date_str] = val
+        
+    return sorted(unique_milestones.items())
+
+
+async def align_snapshots_with_parqet(snapshots: list[dict]) -> list[dict]:
+    """Passt die berechneten Snapshots an die offiziellen Parqet Meilensteine an.
+    
+    Nutzt lineare Interpolation der Abweichungen (Offsets) zwischen den Meilensteinen.
+    Fügt außerdem die exakten Meilenstein-Werte ein, um Stichtage perfekt zu synchronisieren.
+    """
+    milestones = await _fetch_parqet_milestones()
+    if not milestones or not snapshots:
+        return snapshots
+        
+    snap_map = {s["date"]: s["total_value"] for s in snapshots}
+    milestone_offsets = []
+    
+    for m_date, m_val in milestones:
+        rec_val = snap_map.get(m_date)
+        if not rec_val:
+            dates_in_snap = sorted(snap_map.keys())
+            if not dates_in_snap:
+                continue
+            nearest_date = min(dates_in_snap, key=lambda x: abs((datetime.strptime(x, "%Y-%m-%d") - datetime.strptime(m_date, "%Y-%m-%d")).days))
+            rec_val = snap_map[nearest_date]
+        
+        offset = m_val - rec_val
+        milestone_offsets.append((m_date, offset))
+        
+    if not milestone_offsets:
+        return snapshots
+        
+    milestone_offsets.sort(key=lambda x: x[0])
+    
+    adjusted_snapshots = []
+    
+    for s in snapshots:
+        s_date = s["date"]
+        s_val = s["total_value"]
+        
+        prev_m = None
+        next_m = None
+        
+        for m_date, offset in milestone_offsets:
+            if m_date <= s_date:
+                prev_m = (m_date, offset)
+            if m_date >= s_date and next_m is None:
+                next_m = (m_date, offset)
+                
+        if prev_m is None:
+            applied_offset = milestone_offsets[0][1]
+        elif next_m is None:
+            applied_offset = milestone_offsets[-1][1]
+        elif prev_m[0] == next_m[0]:
+            applied_offset = prev_m[1]
+        else:
+            d_prev = datetime.strptime(prev_m[0], "%Y-%m-%d")
+            d_next = datetime.strptime(next_m[0], "%Y-%m-%d")
+            d_curr = datetime.strptime(s_date, "%Y-%m-%d")
+            
+            total_days = (d_next - d_prev).days
+            if total_days > 0:
+                fraction = (d_curr - d_prev).days / total_days
+                applied_offset = prev_m[1] + fraction * (next_m[1] - prev_m[1])
+            else:
+                applied_offset = prev_m[1]
+                
+        adjusted_val = round(s_val + applied_offset, 2)
+        adjusted_snapshots.append({
+            "date": s_date,
+            "total_value": adjusted_val
+        })
+        
+    # Für absolute Konsistenz überschreiben/ergänzen wir die exakten Meilensteinwerte
+    adj_map = {s["date"]: s["total_value"] for s in adjusted_snapshots}
+    for m_date, m_val in milestones:
+        adj_map[m_date] = round(m_val, 2)
+        
+    final_snapshots = []
+    for d_str in sorted(adj_map.keys()):
+        final_snapshots.append({
+            "date": d_str,
+            "total_value": adj_map[d_str]
+        })
+        
+    return final_snapshots
+
