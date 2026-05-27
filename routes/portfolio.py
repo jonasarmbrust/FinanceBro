@@ -80,11 +80,68 @@ async def get_portfolio_history(days: int = 90):
     """Portfolio-Verlauf: Investiertes Kapital + aktueller Wert ueber Zeit.
 
     Datenquellen (in Prioritaet):
-    1. Parqet Activities -> rekonstruierte Investment-Timeline
-    2. Lokale Snapshots aus vorherigen Refreshes
-    3. Aktueller Portfoliowert als einzelner Datenpunkt
+    1. PortfolioHistoryService -> reale historische Daily-Valuations (Parqet Connect + GCS)
+    2. Parqet Activities -> rekonstruierte Investment-Timeline (Fallback)
+    3. Lokale Snapshots aus vorherigen Refreshes (Fallback)
+    4. Aktueller Portfoliowert als einzelner Datenpunkt (Fallback)
     """
-    # --- 1. Versuche Investment-Timeline aus Parqet Activities ---
+    # --- 1. Reale Portfolio-History aus PortfolioHistoryService laden ---
+    try:
+        from services.portfolio_history import load_history
+        history = load_history()
+        if history and history.get("daily"):
+            daily_data = history["daily"]
+            # Cutoff anwenden
+            if days < 9999:
+                from datetime import datetime as dt, timedelta
+                cutoff = (dt.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+                daily_data = [d for d in daily_data if d["date"] >= cutoff]
+            
+            # Investiertes Kapital aus Activities berechnen um es parallel anzuzeigen
+            invested_by_date = {}
+            try:
+                activities = portfolio_data.get("activities")
+                if not activities:
+                    from fetchers.parqet import fetch_portfolio_activities_raw
+                    activities = await fetch_portfolio_activities_raw()
+                if activities:
+                    cumulative = 0.0
+                    for act in sorted(activities, key=lambda x: x.get("date", "")):
+                        date = act.get("date", "")
+                        if not date:
+                            continue
+                        act_type = act.get("type", "")
+                        amount = act.get("amount", 0)
+                        if act_type in ("buy", "kauf", "purchase", "transferin", "transfer_in"):
+                            cumulative += amount
+                        elif act_type in ("sell", "verkauf", "sale", "transferout", "transfer_out"):
+                            cumulative -= amount
+                        invested_by_date[date] = cumulative
+            except Exception as e_act:
+                logger.debug(f"Fehler bei Activities-Berechnung für History: {e_act}")
+
+            result = []
+            current_invested = 0.0
+            from datetime import datetime as dt
+            for d in daily_data:
+                date_str = d["date"]
+                # Letztes bekanntes investiertes Kapital vor/an diesem Datum finden
+                if invested_by_date:
+                    matching_dates = [dt_str for dt_str in invested_by_date.keys() if dt_str <= date_str]
+                    if matching_dates:
+                        current_invested = invested_by_date[max(matching_dates)]
+                result.append({
+                    "date": date_str,
+                    "total_value": d["total_value"],
+                    "invested_capital": round(current_invested, 2)
+                })
+            
+            if result:
+                return result
+    except Exception as e:
+        logger.warning(f"PortfolioHistoryService Abruf fehlgeschlagen: {e}")
+
+    # --- 2. Versuche Investment-Timeline aus Parqet Activities ---
     try:
         # Activities aus State lesen (bereits beim Refresh gecacht)
         activities = portfolio_data.get("activities")
@@ -142,13 +199,13 @@ async def get_portfolio_history(days: int = 90):
     except Exception as e:
         logger.warning(f"Portfolio Activities Timeline fehlgeschlagen: {e}")
 
-    # --- 2. Fallback: Lokale Snapshots ---
+    # --- 3. Fallback: Lokale Snapshots ---
     from database import load_snapshots as load_history
     local = load_history(days=days)
     if local:
         return local
 
-    # --- 3. Fallback: Aktueller Portfoliowert ---
+    # --- 4. Fallback: Aktueller Portfoliowert ---
     summary = portfolio_data.get("summary")
     if summary and summary.total_value > 0:
         from datetime import datetime as dt

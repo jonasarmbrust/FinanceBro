@@ -314,6 +314,34 @@ async def lifespan(app: FastAPI):
         )
         logger.info(f"📈 Intraday Kurs-Updates alle {settings.PRICE_UPDATE_INTERVAL_MIN}min (Mo-Fr 08-22 Uhr)")
 
+        # Portfolio History: Täglicher Snapshot der Wertentwicklung um 22:30 Uhr CET
+        async def _run_history_update():
+            try:
+                from services.portfolio_history import update_today
+                await update_today()
+            except Exception as e:
+                logger.warning(f"Portfolio-History-Update fehlgeschlagen: {e}")
+
+        scheduler.add_job(
+            _run_history_update, "cron",
+            hour=22, minute=30,
+            id="portfolio_history_update",
+        )
+        logger.info("📸 Portfolio-History-Update geplant: Täglich 22:30 CET")
+
+        # Portfolio History: Init / Auto-Backfill im Hintergrund
+        async def _init_portfolio_history():
+            try:
+                from services.portfolio_history import load_history, backfill_from_parqet
+                history = load_history()
+                if not history.get("daily"):
+                    logger.info("📊 Portfolio History ist leer. Starte automatischen Backfill...")
+                    await backfill_from_parqet()
+            except Exception as e:
+                logger.warning(f"Portfolio History Init fehlgeschlagen: {e}")
+
+        asyncio.create_task(_init_portfolio_history())
+
         scheduler.start()
     except Exception as e:
         logger.warning(f"Scheduler konnte nicht gestartet werden: {e}")

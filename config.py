@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GCP_PROJECT_ID: str = ""
     GCP_LOCATION: str = "europe-west1"
+    GCS_BUCKET_NAME: str = "financebro-data"
 
     # AI Finance Agent
     AI_AGENT_TIME: str = "16:30"

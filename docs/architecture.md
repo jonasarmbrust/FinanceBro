@@ -43,6 +43,7 @@ FinanceBro/
 │   ├── trade_advisor.py    # AI Trade Advisor (Function Calling + Structured Output + Chat)
 │   ├── analyst_tracker.py  # Analysten Track Record Bewertung
 │   ├── shadow_agent.py     # Autonome Buy/Sell/Hold Engine (Paper Trading)
+│   ├── portfolio_history.py # Portfolio History (GCS Backfill/Update)
 │   ├── knowledge_data.py   # Wissens-Datenbank (Projekt-Fakten + tägliche Tipps)
 │   └── url_fetcher.py      # URL Content Fetcher (HTML→Text für AI Tools)
 │
@@ -157,8 +158,9 @@ sequenceDiagram
 | **SQLite** (`financebro.db`) | WAL-Modus | Score-History, Snapshots, Reports | Ja (Cloud Run) |
 | **JSON Cache** | Memory + Disk | FMP, yFinance, Parqet | Teilweise (volatile) |
 | **State** (`portfolio_data`) | In-Memory Dict | Aktuelles Portfolio, Activities | Ja |
+| **Portfolio History** | GCS Bucket (`financebro-data`) + Local Cache | Reale historische Portfolio-Vierteljahres-/Tageswerte | Nein (dauerhaft persistiert in GCS) |
 
-> **Cloud Run Hinweis:** SQLite-Daten gehen bei Container-Restart verloren. Für Langzeit-Persistenz: Litestream → GCS Backup.
+> **Cloud Run Hinweis:** SQLite-Daten gehen bei Container-Restart verloren. Für Langzeit-Persistenz: Litestream → GCS Backup. Die Portfolio-Historie ist unabhängig davon direkt via GCS bucket-gesichert.
 
 ## Demo Mode
 
@@ -291,6 +293,7 @@ Kosten:  0 €/Monat (Free Tier)
 | News-Kurator | APScheduler | Mo-Fr 09, 13, 17, 21 | Proaktive Portfolio-News-Alerts |
 | Intraday Kurse | APScheduler | alle 15min Mo-Fr 8-22h | yFinance Batch |
 | Market Monitor | APScheduler | alle 30min Mo-Fr 9-22h | Ad-hoc Event Alerts |
+| Portfolio History Update | APScheduler | Täglich 22:30 CET | Täglichen Snapshot in GCS/Cache speichern |
 | Weekly Digest | Cloud Scheduler | Freitag 22:30 CET | KI-Wochenzusammenfassung via `/api/trigger-weekly-digest` |
 | Daily Pre-Warm | Cloud Scheduler | Mo-Fr 06:00 CET | Full Refresh (Daten vorwärmen, kein Report) |
 | Keep-Alive | Cloud Scheduler | Mo-Fr alle 10min 8-22h | Hält Container wach für APScheduler |

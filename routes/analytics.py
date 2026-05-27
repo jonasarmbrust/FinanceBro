@@ -159,40 +159,47 @@ async def get_market_indices():
     except Exception as e:
         logger.error(f"Market-Indices fehlgeschlagen: {e}")
 
-    # Calculate portfolio YTD from Parqet Connect API (POST /performance with YTD interval)
+    # Calculate portfolio YTD: Erst lokale History, dann Parqet API Fallback
     portfolio_ytd = None
     try:
-        from fetchers.parqet import _ensure_valid_token, PARQET_CONNECT_API
-        from config import settings as app_settings
-        from datetime import datetime as dt
-        import httpx
+        from services.portfolio_history import get_ytd
+        portfolio_ytd = get_ytd()
+        if portfolio_ytd is not None:
+            logger.debug(f"Portfolio YTD via History: {portfolio_ytd}%")
+    except Exception:
+        pass
 
-        access_token = await _ensure_valid_token()
-        if access_token and app_settings.PARQET_PORTFOLIO_ID:
-            url = f"{PARQET_CONNECT_API}/performance"
-            body = {
-                "portfolioIds": [app_settings.PARQET_PORTFOLIO_ID],
-                "interval": {"type": "relative", "value": "ytd"}
-            }
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.post(
-                    url,
-                    headers={"Authorization": f"Bearer {access_token}"},
-                    json=body
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    perf = data.get("performance", {})
-                    val = perf.get("valuation", {})
-                    start_val = val.get("atIntervalStart", 0)
-                    end_val = val.get("atIntervalEnd", 0)
-                    if start_val > 0 and end_val > 0:
-                        portfolio_ytd = round(((end_val - start_val) / start_val) * 100, 2)
-                        logger.info(f"Portfolio YTD via Parqet: {start_val:,.0f} → {end_val:,.0f} = {portfolio_ytd}%")
-                else:
-                    logger.debug(f"Parqet YTD API: {resp.status_code}")
-    except Exception as e:
-        logger.debug(f"Portfolio-YTD Berechnung fehlgeschlagen: {e}")
+    # Fallback: Parqet Connect API (wenn keine lokale History vorhanden)
+    if portfolio_ytd is None:
+        try:
+            from fetchers.parqet import _ensure_valid_token, PARQET_CONNECT_API
+            from config import settings as app_settings
+            import httpx
+
+            access_token = await _ensure_valid_token()
+            if access_token and app_settings.PARQET_PORTFOLIO_ID:
+                url = f"{PARQET_CONNECT_API}/performance"
+                body = {
+                    "portfolioIds": [app_settings.PARQET_PORTFOLIO_ID],
+                    "interval": {"type": "relative", "value": "ytd"}
+                }
+                async with httpx.AsyncClient(timeout=15) as client:
+                    resp = await client.post(
+                        url,
+                        headers={"Authorization": f"Bearer {access_token}"},
+                        json=body
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        perf = data.get("performance", {})
+                        val = perf.get("valuation", {})
+                        start_val = val.get("atIntervalStart", 0)
+                        end_val = val.get("atIntervalEnd", 0)
+                        if start_val > 0 and end_val > 0:
+                            portfolio_ytd = round(((end_val - start_val) / start_val) * 100, 2)
+                            logger.info(f"Portfolio YTD via Parqet API: {start_val:,.0f} → {end_val:,.0f} = {portfolio_ytd}%")
+        except Exception as e:
+            logger.debug(f"Portfolio-YTD Fallback fehlgeschlagen: {e}")
 
     response = {
         "indices": results,
@@ -201,6 +208,48 @@ async def get_market_indices():
     if results:
         _set_cached("market_indices", response)
     return response
+
+
+# ─────────────────────────────────────────────────────────────
+# Portfolio History (Historische Wertentwicklung)
+# ─────────────────────────────────────────────────────────────
+
+@router.get("/api/portfolio-history")
+async def get_portfolio_history(period: str = "ytd"):
+    """Historische Portfolio-Wertentwicklung.
+    
+    Args:
+        period: ytd, 1m, 3m, 6m, 1y, max
+    """
+    from services.portfolio_history import get_history_range, load_history
+    
+    data = get_history_range(period)
+    history = load_history()
+    
+    return {
+        "period": period,
+        "data": data,
+        "metadata": history.get("metadata", {}),
+        "count": len(data),
+    }
+
+
+@router.post("/api/portfolio-history/backfill")
+async def trigger_backfill():
+    """Startet den einmaligen Backfill aller historischen Daten von Parqet."""
+    from services.portfolio_history import backfill_from_parqet
+    
+    count = await backfill_from_parqet()
+    return {"status": "ok", "snapshots": count}
+
+
+@router.post("/api/portfolio-history/update")
+async def trigger_history_update():
+    """Aktualisiert den heutigen Snapshot."""
+    from services.portfolio_history import update_today
+    
+    await update_today()
+    return {"status": "ok"}
 
 
 # ─────────────────────────────────────────────────────────────

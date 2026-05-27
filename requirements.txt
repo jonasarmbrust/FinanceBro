@@ -23,6 +23,9 @@ structlog>=24.0
 # AI (Gemini Research, optional)
 google-genai>=1.0.0
 
+# Google Cloud Storage (Portfolio History)
+google-cloud-storage>=2.14.0
+
 # Charts (served via CDN, but listed for reference)
 # chart.js - loaded via CDN in frontend
 
