@@ -86,8 +86,8 @@ class CurrencyConverter:
 
         yf_ticker = YFINANCE_ALIASES.get(ticker, ticker)
 
-        if yf_ticker.endswith(('.DE', '.F')):
-            # Deutsche Börse → EUR
+        if yf_ticker.endswith(('.DE', '.F', '.MI', '.SG')):
+            # EUR-native exchanges → EUR
             return price
 
         if yf_ticker.endswith('.CO'):
@@ -114,7 +114,7 @@ class CurrencyConverter:
     def is_eur_native(self, ticker: str) -> bool:
         """Prüft ob der Ticker nativ in EUR gehandelt wird."""
         yf_ticker = YFINANCE_ALIASES.get(ticker, ticker)
-        if yf_ticker.endswith(('.DE', '.F')):
+        if yf_ticker.endswith(('.DE', '.F', '.MI', '.SG')):
             return True
         if len(ticker) == 12 and ticker[:2].isalpha():
             return True

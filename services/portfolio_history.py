@@ -202,13 +202,21 @@ async def backfill_from_parqet() -> int:
             logger.warning("Backfill: Keine Activities von Parqet erhalten")
             return 0
         
-        # Cash-Bestand bestimmen
-        current_cash = 0.0
+        # Current positions laden falls nötig
         summary = portfolio_data.get("summary")
+        current_cash = 0.0
         if summary and summary.stocks:
             for s in summary.stocks:
                 if s.position.ticker == "CASH":
                     current_cash = s.position.current_value or s.position.current_price or 0.0
+                    break
+        else:
+            logger.info("Portfolio-Zusammenfassung fehlt im State. Hole Positionen direkt für Cash-Bestand...")
+            from fetchers.parqet import fetch_portfolio
+            positions = await fetch_portfolio()
+            for pos in positions:
+                if pos.ticker == "CASH":
+                    current_cash = pos.current_price or 0.0
                     break
         
         # Historie über Engine berechnen (period_days=9999 für max)

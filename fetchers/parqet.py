@@ -196,13 +196,21 @@ ISIN_TICKER_MAP = {
     "US5324571083": "LLY",        # Eli Lilly
     "US1696561059": "CHPT",       # Chipotle (ex-CMG) — prüfe Ticker
     "US7960542030": "SMSN.IL",    # Samsung SDI (London)
-    "KYG6683N1034": "NIO",        # NIO (Cayman)
+    "KYG6683N1034": "NU",         # Nubank (NU, ex-NIO)
     "US0404131064": "ARM",        # ARM Holdings (Class A)
     "US0404132054": "ARM",        # ARM Holdings (Class A) alternate
     "IE00BM67HW99": "VGWD.DE",   # Vanguard FTSE All-World High Dividend (ETF)
     # Fonds (keine yfinance-Daten verfügbar)
     "DE000A2QJLA8": "DE000A2QJLA8",  # BIT Global Fintech (Fonds, bleibt ISIN)
     "DE000A2QDRW2": "DE000A2QDRW2",  # BIT Global Leaders (Fonds, bleibt ISIN)
+    # Fehlende Portfolio-ISINs
+    "DE0007030009": "RHM.DE",      # Rheinmetall
+    "DE000EWG2LD7": "EWG2.SG",     # EUWAX Gold II (Börse Stuttgart)
+    "JE00BQRFDY49": "WSLV.MI",     # WisdomTree Core Physical Silver (Borsa Italiana)
+    "US0231351067": "AMZN",        # Amazon
+    "US58733R1023": "MELI",        # Mercado Libre
+    "US5951121038": "MU",          # Micron Technology
+    "US44916Y1064": "PURR",        # Hyperliquid Strategies (NASDAQ)
 }
 
 

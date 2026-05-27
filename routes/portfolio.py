@@ -92,7 +92,7 @@ async def get_portfolio_history(days: int = 90):
         if history and history.get("daily"):
             daily_data = history["daily"]
             # Cutoff anwenden
-            if days < 9999:
+            if 0 < days < 9999:
                 from datetime import datetime as dt, timedelta
                 cutoff = (dt.now() - timedelta(days=days)).strftime("%Y-%m-%d")
                 daily_data = [d for d in daily_data if d["date"] >= cutoff]
@@ -174,7 +174,7 @@ async def get_portfolio_history(days: int = 90):
 
             if daily_invested:
                 # Cutoff anwenden
-                if days < 9999:
+                if 0 < days < 9999:
                     cutoff = (dt.now() - timedelta(days=days)).strftime("%Y-%m-%d")
                     filtered = {d: v for d, v in daily_invested.items() if d >= cutoff}
                 else:

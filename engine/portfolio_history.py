@@ -195,14 +195,8 @@ def reconstruct_cash_timeline(
     deltas: list[tuple[str, float]] = []
 
     for act in raw_activities:
-        hat = (act.get("holdingAssetType") or "").lower()
-        if hat != "cash":
-            continue
-
         act_type = (act.get("type") or "").lower()
-        date = act.get("datetime") or act.get("date") or ""
-        if date and "T" in date:
-            date = date.split("T")[0]
+        date = act.get("date") or ""
         amount = float(act.get("amount") or 0)
 
         if not date:
@@ -217,9 +211,9 @@ def reconstruct_cash_timeline(
             delta = -amount  # Cash geht raus
         elif act_type in ("sell", "verkauf", "sale"):
             delta = amount   # Cash kommt rein
-        elif act_type in ("dividend",):
+        elif act_type in ("dividend", "dividende"):
             delta = amount
-        elif act_type in ("interest",):
+        elif act_type in ("interest", "zins", "zinsen"):
             delta = amount
 
         if delta != 0.0:
@@ -317,8 +311,8 @@ async def build_portfolio_history(
     if not holdings:
         return {"dates": [], "stocks": {}, "total": [], "total_cost": []}
 
-    # 1b. Performance API: Positionen vorbelegen die vor dem Activity-Fenster liegen
-    await _prepopulate_from_performance(holdings, activities)
+    # 1b. Positionen vorbelegen die vor dem Activity-Fenster liegen
+    await _prepopulate_starting_shares(holdings, activities)
 
     # 2. Cash-Timeline rekonstruieren (wenn raw data verfügbar)
     cash_timeline = None
@@ -548,70 +542,96 @@ def _convert_prices_to_eur(
     return converted
 
 
-async def _prepopulate_from_performance(
+async def _prepopulate_starting_shares(
     holdings: dict[str, list[tuple[str, float]]],
     activities: list[dict],
 ) -> None:
-    """Ergänzt Holdings mit Daten aus der Performance API.
+    """Berechnet rückwärts den Aktienbestand zum Start des Activity-Fensters.
 
-    Wenn eine Position laut Performance API vor dem ältesten Activity
-    existierte, wird ein synthetischer Buy-Event eingefügt.
+    Vergleicht den aktuellen Ist-Bestand aus dem State mit den kumulierten
+    Änderungen im Activity-Fenster, um den Bestand am ersten Tag zu ermitteln.
     """
-    try:
-        from fetchers.parqet import fetch_portfolio_performance
-        perf_data = await fetch_portfolio_performance()
-        if not perf_data:
-            return
-    except Exception as e:
-        logger.debug(f"Performance API für Pre-Population nicht verfügbar: {e}")
-        return
-
     # Frühestes Activity-Datum finden
     all_act_dates = [a.get("date", "") for a in activities if a.get("date")]
     if not all_act_dates:
         return
     earliest_activity = min(all_act_dates)
 
+    # Einen Tag vor der ersten Aktivität für den Startwert nutzen
+    try:
+        from datetime import datetime as dt, timedelta
+        start_dt = dt.strptime(earliest_activity, "%Y-%m-%d") - timedelta(days=1)
+        start_date_pre = start_dt.strftime("%Y-%m-%d")
+    except Exception:
+        start_date_pre = "2020-01-01"
+
+    # Ist-Bestand laden
+    from state import portfolio_data
+    summary = portfolio_data.get("summary")
+
+    current_holdings = {}
+    if summary and summary.stocks:
+        for s in summary.stocks:
+            ticker = s.position.ticker
+            if not ticker or ticker == "CASH":
+                continue
+            current_holdings[ticker] = s.position.shares
+
+    # Fallback auf Parqet Performance API (falls State leer)
+    if not current_holdings:
+        try:
+            from fetchers.parqet import fetch_portfolio_performance
+            perf_data = await fetch_portfolio_performance()
+            if perf_data and perf_data.get("holdings"):
+                for h in perf_data["holdings"]:
+                    ticker = h.get("ticker", "")
+                    if ticker and ticker != "CASH" and not h.get("isSold", False):
+                        current_holdings[ticker] = h.get("shares", 0.0)
+        except Exception as e:
+            logger.debug(f"Pre-Population Fallback fehlgeschlagen: {e}")
+
+    if not current_holdings:
+        return
+
+    # Netto-Veränderung im Aktivitäten-Fenster berechnen
+    net_changes = defaultdict(float)
+    for act in activities:
+        act_type = (act.get("type") or "").lower()
+        ticker = act.get("ticker", "")
+        shares = float(act.get("shares") or 0)
+        if not ticker or ticker == "CASH" or shares <= 0:
+            continue
+
+        if act_type in ("buy", "kauf", "purchase", "transferin", "transfer_in"):
+            net_changes[ticker] += shares
+        elif act_type in ("sell", "verkauf", "sale", "transferout", "transfer_out"):
+            net_changes[ticker] -= shares
+
+    # Rückwärts rechnen: start_shares = current_shares - net_change
     prepop_count = 0
-    for h in perf_data.get("holdings", []):
-        ticker = h.get("ticker", "")
-        if not ticker or ticker == "CASH" or h.get("type") == "cash":
-            continue
+    for ticker, curr_shares in current_holdings.items():
+        net_change = net_changes.get(ticker, 0.0)
+        start_shares = curr_shares - net_change
 
-        earliest_date = h.get("earliestActivityDate", "")
-        shares = h.get("shares", 0)
+        if start_shares > 0.001:
+            prepop_count += 1
+            if ticker in holdings:
+                # Add start_shares to existing timeline
+                holdings[ticker] = [
+                    (date, round(cum_shares + start_shares, 4))
+                    for date, cum_shares in holdings[ticker]
+                ]
+                holdings[ticker].insert(0, (start_date_pre, round(start_shares, 4)))
+            else:
+                holdings[ticker] = [(start_date_pre, round(start_shares, 4))]
 
-        # Nur wenn Position VOR dem Activity-Fenster begann
-        if not earliest_date or earliest_date >= earliest_activity:
-            continue
-
-        # Prüfe ob der Ticker bereits in holdings ist
-        if ticker in holdings:
-            # Prüfe ob erste Activity im Holdings-Fenster liegt
-            first_holding_date = holdings[ticker][0][0] if holdings[ticker] else ""
-            if first_holding_date and first_holding_date > earliest_date:
-                # Es gibt einen Gap: Die Position existierte schon vorher
-                # Berechne die Shares am Anfang des Activity-Fensters
-                # (Aktuelle Shares aus Performance API als Startpunkt)
-                if not h.get("isSold", False) and shares > 0:
-                    # Füge den Anfangs-Bestand VOR den ersten bekannten Event ein
-                    # Die Differenz = shares am Anfang des Fensters
-                    existing_first_shares = holdings[ticker][0][1]
-                    if existing_first_shares > 0:
-                        # Es wurde bereits korrekt als Buy einsortiert
-                        continue
-        else:
-            # Ticker existiert gar nicht in den Activities aber hat Shares
-            if shares > 0 and not h.get("isSold", False):
-                # Synthetischen Buy am earliestActivityDate einfügen
-                holdings[ticker] = [(earliest_date, shares)]
-                prepop_count += 1
-                logger.info(
-                    f"📦 Pre-Population: {ticker} mit {shares:.2f} Shares ab {earliest_date}"
-                )
+            logger.info(
+                f"📦 Pre-Population: {ticker} startete mit {start_shares:.2f} Shares "
+                f"(aktuell: {curr_shares:.2f}, Änderung im Fenster: {net_change:.2f})"
+            )
 
     if prepop_count > 0:
-        logger.info(f"📦 {prepop_count} Positionen aus Performance API vorbelegt")
+        logger.info(f"📦 {prepop_count} Positionen erfolgreich rückwärts vorbelegt")
 
 
 async def _fetch_prices_with_cache(
