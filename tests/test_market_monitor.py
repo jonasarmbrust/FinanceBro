@@ -22,7 +22,24 @@ from services.market_monitor import (
 )
 
 
+@pytest.fixture(autouse=True)
+def mock_db_state():
+    """Mockt die system_state-Tabelle in der SQLite-Datenbank mit einem In-Memory-Wörterbuch."""
+    db_mock = {}
+
+    def get_mock(key, default=""):
+        return db_mock.get(key, default)
+
+    def set_mock(key, value):
+        db_mock[key] = str(value)
+
+    with patch("database.get_system_state", side_effect=get_mock), \
+         patch("database.set_system_state", side_effect=set_mock):
+        yield
+
+
 # ─────────────────────────────────────────────────────────────
+
 # Helper: Mock-Objekte
 # ─────────────────────────────────────────────────────────────
 

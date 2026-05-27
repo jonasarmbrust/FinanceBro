@@ -155,7 +155,7 @@ sequenceDiagram
 
 | Schicht | Technologie | Inhalt | Verlust bei Restart? |
 |---------|------------|--------|---------------------|
-| **SQLite** (`financebro.db`) | WAL-Modus | Score-History, Snapshots, Reports | Ja (Cloud Run) |
+| **SQLite** (`financebro.db`) | WAL-Modus | Score-History, Snapshots, Reports, System-State | Ja (Cloud Run) |
 | **JSON Cache** | Memory + Disk | FMP, yFinance, Parqet | Teilweise (volatile) |
 | **State** (`portfolio_data`) | In-Memory Dict | Aktuelles Portfolio, Activities | Ja |
 | **Portfolio History** | GCS Bucket (`financebro-data`) + Local Cache | Reale historische Portfolio-Vierteljahres-/Tageswerte | Nein (dauerhaft persistiert in GCS) |
