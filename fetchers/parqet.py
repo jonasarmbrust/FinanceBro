@@ -849,7 +849,7 @@ async def _enrich_positions(
 
 
 
-async def fetch_portfolio_performance(timeframe: str = "max") -> list[dict]:
+async def fetch_portfolio_performance_chart(timeframe: str = "max") -> list[dict]:
     """Holt Portfolio-Performance-Chart von der Parqet API.
 
     Args:

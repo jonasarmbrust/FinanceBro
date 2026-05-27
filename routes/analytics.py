@@ -159,22 +159,38 @@ async def get_market_indices():
     except Exception as e:
         logger.error(f"Market-Indices fehlgeschlagen: {e}")
 
-    # Calculate portfolio YTD from snapshots
+    # Calculate portfolio YTD from Parqet Connect API (POST /performance with YTD interval)
     portfolio_ytd = None
     try:
-        from database import load_snapshots
+        from fetchers.parqet import _ensure_valid_token, PARQET_CONNECT_API
+        from config import settings as app_settings
         from datetime import datetime as dt
-        year_start_str = f"{dt.now().year}-01-01"
-        snapshots = load_snapshots(days=365)
-        if snapshots:
-            # Find first snapshot on or after Jan 1
-            jan_snapshots = [s for s in snapshots if s.get("date", "") >= year_start_str]
-            if jan_snapshots:
-                first_val = jan_snapshots[0].get("total_value", 0)
-                current_summary = portfolio_data.get("summary")
-                current_val = current_summary.total_value if current_summary else 0
-                if first_val > 0 and current_val > 0:
-                    portfolio_ytd = round(((current_val - first_val) / first_val) * 100, 2)
+        import httpx
+
+        access_token = await _ensure_valid_token()
+        if access_token and app_settings.PARQET_PORTFOLIO_ID:
+            url = f"{PARQET_CONNECT_API}/performance"
+            body = {
+                "portfolioIds": [app_settings.PARQET_PORTFOLIO_ID],
+                "interval": {"type": "relative", "value": "ytd"}
+            }
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(
+                    url,
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    json=body
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    perf = data.get("performance", {})
+                    val = perf.get("valuation", {})
+                    start_val = val.get("atIntervalStart", 0)
+                    end_val = val.get("atIntervalEnd", 0)
+                    if start_val > 0 and end_val > 0:
+                        portfolio_ytd = round(((end_val - start_val) / start_val) * 100, 2)
+                        logger.info(f"Portfolio YTD via Parqet: {start_val:,.0f} → {end_val:,.0f} = {portfolio_ytd}%")
+                else:
+                    logger.debug(f"Parqet YTD API: {resp.status_code}")
     except Exception as e:
         logger.debug(f"Portfolio-YTD Berechnung fehlgeschlagen: {e}")
 
