@@ -4577,3 +4577,74 @@ button:focus:not(:focus-visible) {
 .shadow-config-chevron-open {
     transform: rotate(180deg);
 }
+
+/* ── TipRanks Integration ─────────────────────────── */
+.tipranks-section {
+    border-left: 3px solid #f99d03;
+}
+.tipranks-logo-text {
+    color: #f99d03;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+.smart-score-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.65rem;
+    border-radius: 99px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    margin-left: 0.5rem;
+    letter-spacing: 0.02em;
+}
+.bull-bear-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+}
+@media (max-width: 640px) {
+    .bull-bear-grid { grid-template-columns: 1fr; }
+}
+.bull-card, .bear-card {
+    background: var(--bg-secondary);
+    border-radius: 10px;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--border);
+}
+.bull-card {
+    border-left: 3px solid #22c55e;
+}
+.bear-card {
+    border-left: 3px solid #ef4444;
+}
+.bull-bear-title {
+    font-size: 0.78rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    letter-spacing: 0.02em;
+}
+.bull-bear-point {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    padding: 0.25rem 0;
+    line-height: 1.4;
+}
+.bull-point { color: #22c55e; }
+.bear-point { color: #ef4444; }
+.risk-warning-banner {
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    border-radius: 10px;
+    padding: 0.85rem 1rem;
+}
+.risk-warning-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #ef4444;
+    margin-bottom: 0.4rem;
+}
+.risk-warning-item {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    padding: 0.2rem 0;
+}

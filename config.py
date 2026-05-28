@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     # Caching
     CACHE_TTL_HOURS: int = 12
 
+    # TipRanks MCP API
+    TIPRANKS_API_KEY: str = ""
+    TIPRANKS_RPM_LIMIT: int = 5       # Max Requests pro Minute
+    TIPRANKS_DAILY_LIMIT: int = 25    # Max Requests pro Tag
+
     # Dashboard-Zugangsschutz (Basic Auth)
     DASHBOARD_USER: str = ""
     DASHBOARD_PASSWORD: str = ""
@@ -114,6 +119,12 @@ class Settings(BaseSettings):
     @property
     def auth_configured(self) -> bool:
         return bool(self.DASHBOARD_USER and self.DASHBOARD_PASSWORD)
+
+    @computed_field
+    @property
+    def tipranks_configured(self) -> bool:
+        """True wenn TipRanks API-Key konfiguriert ist."""
+        return bool(self.TIPRANKS_API_KEY and self.TIPRANKS_API_KEY != "your_tipranks_api_key_here")
 
     def model_post_init(self, __context) -> None:
         # Sync PORT → SERVER_PORT (Cloud Run setzt PORT)

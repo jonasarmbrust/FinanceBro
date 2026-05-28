@@ -70,7 +70,7 @@ async def _do_refresh():
 
     _refresh_errors: dict[str, list[str]] = {
         "fmp": [], "yfinance": [], "technical": [],
-        "parqet": [], "other": [],
+        "tipranks": [], "parqet": [], "other": [],
     }
 
     try:

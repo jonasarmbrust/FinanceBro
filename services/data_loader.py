@@ -47,6 +47,7 @@ async def load_position_data(
     from fetchers.technical import fetch_technical_indicators
     from fetchers.yfinance_data import fetch_yfinance_data
     from engine.scorer import calculate_score
+    from config import settings
 
     # CASH braucht kein Scoring
     if pos.ticker == "CASH":
@@ -60,6 +61,11 @@ async def load_position_data(
             "yfinance": fetch_yfinance_data(pos.ticker),
             "technical": fetch_technical_indicators(pos.ticker),
         }
+
+        # TipRanks nur laden wenn konfiguriert
+        if settings.tipranks_configured:
+            from fetchers.tipranks import fetch_tipranks_data
+            tasks["tipranks"] = fetch_tipranks_data(pos.ticker)
 
         keys = list(tasks.keys())
         results = await asyncio.gather(*tasks.values(), return_exceptions=True)
@@ -111,6 +117,10 @@ async def load_position_data(
             yf_data.earnings_growth_yoy is not None
         )
 
+        # TipRanks-Daten extrahieren
+        tipranks_data = data.get("tipranks")
+        ds.tipranks = tipranks_data is not None and tipranks_data.smart_score is not None
+
         score = calculate_score(
             ticker=pos.ticker,
             name=pos.name,
@@ -122,6 +132,7 @@ async def load_position_data(
             fear_greed=fear_greed_data,
             technical=tech_data,
             sector=pos.sector or "",
+            tipranks_data=tipranks_data,
         )
 
         return StockFullData(
@@ -131,6 +142,7 @@ async def load_position_data(
             technical=tech_data,
             yfinance=yf_data,
             fmp_rating=fmp_rat,
+            tipranks=tipranks_data,
             score=score,
             data_sources=ds,
         )
@@ -176,7 +188,7 @@ async def load_positions_batched(
         pass
     try:
         from cache_manager import CacheManager
-        for name in ("yfinance", "technical"):
+        for name in ("yfinance", "technical", "tipranks"):
             if name in CacheManager._registry:
                 CacheManager._registry[name].flush()
     except Exception:

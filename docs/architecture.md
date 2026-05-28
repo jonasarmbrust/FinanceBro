@@ -48,7 +48,7 @@ FinanceBro/
 │   └── url_fetcher.py      # URL Content Fetcher (HTML→Text für AI Tools)
 │
 ├── engine/
-│   ├── scorer.py           # 10-Faktor Scoring Engine v5
+│   ├── scorer.py           # 11-Faktor Scoring Engine v6 (inkl. TipRanks Smart Score)
 │   ├── rebalancer.py       # Portfolio-Rebalancing
 │   ├── analysis.py         # Analyse-Reports → SQLite
 │   ├── analytics.py        # Korrelation, Risiko, Dividenden
@@ -66,6 +66,7 @@ FinanceBro/
 │   ├── yfinance_ws.py      # yFinance WebSocket (Echtzeit International)
 │   ├── technical.py        # RSI, SMA, MACD Berechnung
 │   ├── fear_greed.py       # CNN Fear & Greed Index
+│   ├── tipranks.py         # TipRanks MCP API (Smart Score, Analyst, Bull/Bear, Hedge Funds)
 │   ├── currency.py         # EUR/USD/DKK/GBP Wechselkurse
 │   ├── yfinance_screener.py # Tech-Aktien Screening (yfinance)
 │   └── demo_data.py        # Synthetische Demo-Daten
@@ -78,7 +79,7 @@ FinanceBro/
 │   ├── app.js              # ~3400 LOC: Rendering, SSE, Theme, Toast, Heatmap, Shadow Agent
 │   ├── translations.js     # i18n System (225 Keys, DE/EN) — t() Funktion + data-i18n
 │   └── styles.css          # ~3800 LOC: Design System, Dark/Light Mode, Glassmorphism
-└── tests/                  # 391 pytest Tests (22 Testdateien)
+└── tests/                  # 436 pytest Tests (22 Testdateien)
 ```
 
 ## Frontend-Architektur
@@ -139,9 +140,9 @@ sequenceDiagram
     S->>F: fetch_portfolio() [Parqet]
     F-->>S: 20 Positionen (19 Aktien + Cash)
     S->>DL: load_positions_batched()
-    DL->>F: FMP + yFinance + Technical (parallel)
-    F-->>DL: Fundamentals, Preise, Indikatoren
-    DL->>E: calculate_score() [10 Faktoren]
+    DL->>F: FMP + yFinance + Technical + TipRanks (parallel)
+    F-->>DL: Fundamentals, Preise, Indikatoren, Smart Score
+    DL->>E: calculate_score() [11 Faktoren]
     E-->>S: StockScore + StockFullData
     S->>E: calculate_rebalancing()
     S->>DB: save_snapshot() + save_analysis()
@@ -220,6 +221,7 @@ graph LR
 | Parqet | 12h | Portfolio-Positionen (Stale-Fallback bei Ablauf) |
 | Currency | 12h | Wechselkurse (<0.5% Änderung/Tag) |
 | Fear & Greed | 6h | Sentiment-Index (persistent über Restarts) |
+| TipRanks | 6h | Smart Score, Analyst Consensus, Bull/Bear, Hedge Fund Signals |
 | Technical | 4h | RSI, SMA, Momentum (volatile) |
 | Analytics | 15min | Korrelation, Risk, Benchmark (invalidiert nach Refresh) |
 

@@ -185,18 +185,42 @@ class FmpRating(BaseModel):
     pb_score: int = 0
 
 
+class TipRanksData(BaseModel):
+    """Daten vom TipRanks MCP-Server (Smart Score, Analysten, Sentiment)."""
+    smart_score: int = 5              # 1-10 (TipRanks Smart Score)
+    analyst_consensus: str = ""       # "Buy", "Hold", "Sell"
+    analyst_count: int = 0            # Anzahl Analysten
+    buy_count: int = 0
+    hold_count: int = 0
+    sell_count: int = 0
+    price_target_avg: float = 0.0     # Durchschnittliches Preisziel
+    price_target_high: float = 0.0    # Höchstes Preisziel
+    price_target_low: float = 0.0     # Niedrigstes Preisziel
+    upside_potential: float = 0.0     # Upside in %
+    hedge_fund_trend: str = ""        # z.B. "Bullish", "Neutral"
+    hedge_fund_sentiment: float = 0.0 # -1.0 bis 1.0
+    insider_trend: str = ""           # z.B. "Positive", "Negative"
+    news_sentiment: float = 0.0       # -1.0 bis 1.0
+    bull_points: list[str] = []       # Bullische Argumente
+    bear_points: list[str] = []       # Bärische Argumente
+    risk_warnings: list[str] = []     # Risiko-Warnungen
+    investor_sentiment: float = 0.0   # Retail-Investor Sentiment
+    peers_comparison: list[dict] = [] # Vergleich mit Peers
+
+
 class ScoreBreakdown(BaseModel):
-    """Aufschluesselung des Gesamtscores (v5: 10 Faktoren)."""
-    quality_score: float = 0.0        # 0-100 (ROE, Margins, D/E) — 19%
-    valuation_score: float = 0.0      # 0-100 (PE, EV/EBITDA, PEG, FCF Yield) — 14%
-    analyst_score: float = 0.0        # 0-100 (Konsens + Preisziel) — 15%
-    technical_score: float = 0.0      # 0-100 (RSI + SMA + Momentum) — 13%
-    growth_score: float = 0.0         # 0-100 (Revenue, Earnings YoY, ROIC) — 11%
-    quantitative_score: float = 0.0   # 0-100 (Altman Z + Piotroski) — 10%
-    sentiment_score: float = 0.0      # 0-100 (Fear&Greed Index) — 7%
-    momentum_score: float = 0.0       # 0-100 (3M/6M Kurs-Momentum) — 6%
-    insider_score: float = 0.0        # 0-100 (Insider Buy/Sell) — 3%
-    esg_score: float = 0.0            # 0-100 (ESG Risk) — 2%
+    """Aufschluesselung des Gesamtscores (v6: 11 Faktoren)."""
+    quality_score: float = 0.0        # 0-100 (ROE, Margins, D/E) — 17.86%
+    valuation_score: float = 0.0      # 0-100 (PE, EV/EBITDA, PEG, FCF Yield) — 13.16%
+    analyst_score: float = 0.0        # 0-100 (Konsens + Preisziel) — 14.10%
+    technical_score: float = 0.0      # 0-100 (RSI + SMA + Momentum) — 12.22%
+    growth_score: float = 0.0         # 0-100 (Revenue, Earnings YoY, ROIC) — 10.34%
+    quantitative_score: float = 0.0   # 0-100 (Altman Z + Piotroski) — 9.40%
+    sentiment_score: float = 0.0      # 0-100 (Fear&Greed Index) — 6.58%
+    momentum_score: float = 0.0       # 0-100 (3M/6M Kurs-Momentum) — 5.64%
+    insider_score: float = 0.0        # 0-100 (Insider Buy/Sell) — 2.82%
+    esg_score: float = 0.0            # 0-100 (ESG Risk) — 1.88%
+    tipranks_score: float = 0.0       # 0-100 (TipRanks Smart Score) — 6%
 
 
 class StockScore(BaseModel):
@@ -218,6 +242,7 @@ class DataSourceStatus(BaseModel):
     technical: bool = False       # Technische Indikatoren (aus yfinance berechnet)
     yfinance: bool = False
     fear_greed: bool = False
+    tipranks: bool = False        # TipRanks Smart Score + Analysten
 
 
 class DividendInfo(BaseModel):
@@ -246,6 +271,7 @@ class StockFullData(BaseModel):
     technical: Optional[TechnicalIndicators] = None
     yfinance: Optional[YFinanceData] = None
     fmp_rating: Optional[FmpRating] = None
+    tipranks: Optional[TipRanksData] = None
     score: Optional[StockScore] = None
     dividend: Optional[DividendInfo] = None
     data_sources: DataSourceStatus = Field(default_factory=DataSourceStatus)

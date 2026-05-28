@@ -1,24 +1,25 @@
-# FinanceBro – Scoring Engine v5
+# FinanceBro – Scoring Engine v6
 
 ## Übersicht
 
-10-Faktor Multi-Analyse-System mit sektorbasierter Bewertung.
+11-Faktor Multi-Analyse-System mit sektorbasierter Bewertung.
 Jeder Faktor wird auf 0-100 normalisiert, gewichtet zusammengeführt.
 
 ## Faktoren & Gewichte
 
 | # | Faktor | Gewicht | Datenquelle | Beschreibung |
 |---|--------|---------|-------------|--------------|
-| 1 | **Quality** | 19% | FMP/yFinance | ROE, Gross Margin, Operating Margin, D/E, Current Ratio |
-| 2 | **Analyst** | 15% | FMP/yFinance | Konsens (60%) + Preisziel (40%), merged |
-| 3 | **Valuation** | 14% | FMP | P/E, EV/EBITDA, PEG, FCF Yield — **sektorbasiert** |
-| 4 | **Technical** | 13% | yFinance | RSI-14, SMA Cross, Momentum 30d, Price vs SMA50 |
-| 5 | **Growth** | 11% | FMP + yFinance | Revenue Growth YoY, Earnings Growth YoY, ROIC |
-| 6 | **Quantitative** | 10% | yFinance | Altman Z-Score (selbst berechnet), Piotroski F-Score (selbst berechnet) |
-| 7 | **Sentiment** | 7% | CNN | Fear & Greed Index (Markt-Level) |
-| 8 | **Momentum** | 6% | yFinance | 90d + 180d Kurs-Momentum |
-| 9 | **Insider** | 3% | yFinance | Insider Buy/Sell Ratio |
-| 10 | **ESG** | 2% | yFinance | ESG Risk Score |
+| 1 | **Quality** | 17.86% | FMP/yFinance | ROE, Gross Margin, Operating Margin, D/E, Current Ratio |
+| 2 | **Analyst** | 14.10% | FMP/yFinance | Konsens (60%) + Preisziel (40%), merged |
+| 3 | **Valuation** | 13.16% | FMP | P/E, EV/EBITDA, PEG, FCF Yield — **sektorbasiert** |
+| 4 | **Technical** | 12.22% | yFinance | RSI-14, SMA Cross, Momentum 30d, Price vs SMA50 |
+| 5 | **Growth** | 10.34% | FMP + yFinance | Revenue Growth YoY, Earnings Growth YoY, ROIC |
+| 6 | **Quantitative** | 9.40% | yFinance | Altman Z-Score (selbst berechnet), Piotroski F-Score (selbst berechnet) |
+| 7 | **Sentiment** | 6.58% | CNN | Fear & Greed Index (Markt-Level) |
+| 8 | **TipRanks** | 6.00% | TipRanks MCP | Smart Score (1-10 → 0-100) + Hedge Fund Sentiment |
+| 9 | **Momentum** | 5.64% | yFinance | 90d + 180d Kurs-Momentum |
+| 10 | **Insider** | 2.82% | yFinance | Insider Buy/Sell Ratio |
+| 11 | **ESG** | 1.88% | yFinance | ESG Risk Score |
 
 **Summe Gewichte: 100%**
 
@@ -52,8 +53,8 @@ für Financials wäre es teuer:
 ## Confidence
 
 Basiert auf der Anzahl verfügbarer Faktoren:
-- 10/10 Faktoren → Confidence 1.0
-- 5/10 Faktoren → Confidence 0.5
+- 11/11 Faktoren → Confidence 1.0
+- 6/11 Faktoren → ~0.5
 - 0 Faktoren → Confidence 0.0, automatisch HOLD mit Score 50
 
 ## v5 Änderungen (gegenüber v4)
@@ -95,3 +96,14 @@ Basiert auf der Anzahl verfügbarer Faktoren:
   benötigt `pd.read_html(lxml)`. Vorher: silent fail → 0 Earnings-Termine.
 - **Performance:** `_yfinance_price_fallback()` blockierte den Event-Loop (synchroner
   `ticker.info` Aufruf). Jetzt via `asyncio.to_thread()` — Server bleibt responsiv.
+
+## v6 Änderungen (TipRanks Integration)
+
+- 10 → **11 Faktoren** (TipRanks Smart Score als neuer Faktor)
+- **Gewichtung angepasst:** Bestehende v5-Gewichte × 0.94, neuer TipRanks-Faktor 6%
+- **TipRanks Smart Score:** 1-10 skaliert auf 0-100 mit Hedge Fund Sentiment Modifier
+- **Graceful Degradation:** Ohne TipRanks API Key arbeitet der Scorer wie bisher (10 Faktoren)
+- **Neues Model:** `TipRanksData` (20 Felder: Smart Score, Analyst Consensus, Bull/Bear Points,
+  Hedge Fund Signals, Insider Trend, News/Investor Sentiment, Risk Warnings)
+- **Neuer Fetcher:** `fetchers/tipranks.py` — MCP-Client (JSON-RPC über HTTP) mit
+  Session-Management, Rate Limiting (RPM + Daily), 6h Cache

@@ -234,6 +234,22 @@ const i18n = {
         shadowResetConfigSuccess: '🔄 Konfiguration zurückgesetzt',
         shadowResetConfigFail: '❌ Fehler beim Zurücksetzen',
         shadowEmptyChart: 'Noch keine Performance-Daten — Agent starten um zu beginnen.',
+
+        // TipRanks
+        tipranksSection: 'TipRanks',
+        smartScore: 'Smart Score',
+        analystConsensus: 'Analysten-Konsens',
+        tipranksAnalysts: 'Analysten',
+        priceTargetAvg: 'Preisziel (Ø)',
+        priceTargetRange: 'Preisziel-Spanne',
+        hedgeFundTrend: 'Hedge-Fund Trend',
+        insiderTrend: 'Insider-Trend',
+        newsSentiment: 'News-Sentiment',
+        investorSentiment: 'Anleger-Sentiment',
+        bullBearArguments: 'Bull/Bear Argumente',
+        bullishArgs: '🟢 Bullische Argumente',
+        bearishArgs: '🔴 Bärische Argumente',
+        riskWarnings: 'Risiko-Warnungen',
     },
     en: {
         // Header
@@ -461,6 +477,22 @@ const i18n = {
         shadowResetConfigSuccess: '🔄 Configuration reset',
         shadowResetConfigFail: '❌ Reset failed',
         shadowEmptyChart: 'No performance data yet — start the agent to begin.',
+
+        // TipRanks
+        tipranksSection: 'TipRanks',
+        smartScore: 'Smart Score',
+        analystConsensus: 'Analyst Consensus',
+        tipranksAnalysts: 'Analysts',
+        priceTargetAvg: 'Price Target (Avg)',
+        priceTargetRange: 'Price Target Range',
+        hedgeFundTrend: 'Hedge Fund Trend',
+        insiderTrend: 'Insider Trend',
+        newsSentiment: 'News Sentiment',
+        investorSentiment: 'Investor Sentiment',
+        bullBearArguments: 'Bull/Bear Arguments',
+        bullishArgs: '🟢 Bullish Arguments',
+        bearishArgs: '🔴 Bearish Arguments',
+        riskWarnings: 'Risk Warnings',
     }
 };
 

@@ -320,7 +320,7 @@ function renderTable() {
         const pnlSign = pnl >= 0 ? '+' : '';
 
         const ds = s.data_sources || {};
-        const srcDots = ['fmp', 'technical', 'yfinance', 'alphavantage'].map(k => {
+        const srcDots = ['fmp', 'technical', 'yfinance', 'tipranks'].map(k => {
             const ok = ds[k];
             return `<span class="src-dot ${ok ? 'src-ok' : 'src-miss'}" title="${k}: ${ok ? '✓' : '✗'}"></span>`;
         }).join('');
@@ -629,6 +629,7 @@ function _renderOverviewTab(stock, pos, score) {
         { key: 'technical', label: 'Technical' },
         { key: 'yfinance', label: 'Yahoo' },
         { key: 'fear_greed', label: 'Fear&Greed' },
+        { key: 'tipranks', label: 'TipRanks' },
     ];
     html += `
         <div class="modal-section">
@@ -656,6 +657,7 @@ function _renderOverviewTab(stock, pos, score) {
             { label: 'Sentiment', value: bd.sentiment_score || 0, weight: '8%' },
             { label: 'Insider', value: bd.insider_score || 0, weight: '3%' },
             { label: 'ESG', value: bd.esg_score || 0, weight: '2%' },
+            { label: 'TipRanks', value: bd.tipranks_score || 0, weight: '6%' },
         ];
         html += `
             <div class="modal-section">
@@ -807,6 +809,70 @@ function _renderFundamentalsTab(stock) {
                 </div>
             </div>
         `;
+    }
+    // TipRanks Data
+    const tr = stock.tipranks;
+    if (tr && tr.smart_score) {
+        const ssColor = tr.smart_score >= 8 ? '#22c55e' : tr.smart_score >= 5 ? '#eab308' : '#ef4444';
+        const ssEmoji = tr.smart_score >= 8 ? '🟢' : tr.smart_score >= 5 ? '🟡' : '🔴';
+        html += `
+            <div class="modal-section tipranks-section">
+                <div class="modal-section-title">
+                    <span class="tipranks-logo-text">TipRanks</span>
+                    <span class="smart-score-badge" style="background:${ssColor}20;color:${ssColor};border:1px solid ${ssColor}40">
+                        Smart Score: ${tr.smart_score}/10 ${ssEmoji}
+                    </span>
+                </div>
+                <div class="modal-metrics">
+                    ${metricItem(t('analystConsensus'), tr.analyst_consensus || null)}
+                    ${metricItem(t('tipranksAnalysts'), tr.analyst_count || null)}
+                    ${metricItem('Buy / Hold / Sell', tr.analyst_count > 0 ? tr.buy_count + ' / ' + tr.hold_count + ' / ' + tr.sell_count : null)}
+                    ${metricItem(t('priceTargetAvg'), tr.price_target_avg > 0 ? formatCurrency(tr.price_target_avg) : null)}
+                    ${metricItem(t('priceTargetRange'), tr.price_target_low > 0 && tr.price_target_high > 0 ? formatCurrency(tr.price_target_low) + ' – ' + formatCurrency(tr.price_target_high) : null)}
+                    ${metricItem('Upside', tr.upside_potential ? (tr.upside_potential > 0 ? '+' : '') + tr.upside_potential.toFixed(1) + '%' : null)}
+                    ${metricItem(t('hedgeFundTrend'), tr.hedge_fund_trend || null)}
+                    ${metricItem(t('insiderTrend'), tr.insider_trend || null)}
+                    ${metricItem(t('newsSentiment'), tr.news_sentiment ? (tr.news_sentiment > 0 ? '👍 ' : tr.news_sentiment < 0 ? '👎 ' : '😐 ') + tr.news_sentiment.toFixed(2) : null)}
+                    ${metricItem(t('investorSentiment'), tr.investor_sentiment ? tr.investor_sentiment.toFixed(2) : null)}
+                </div>
+            </div>
+        `;
+        // Bull/Bear Points
+        if ((tr.bull_points && tr.bull_points.length > 0) || (tr.bear_points && tr.bear_points.length > 0)) {
+            html += `
+                <div class="modal-section">
+                    <div class="modal-section-title">${t('bullBearArguments')}</div>
+                    <div class="bull-bear-grid">
+            `;
+            if (tr.bull_points && tr.bull_points.length > 0) {
+                html += `
+                    <div class="bull-card">
+                        <div class="bull-bear-title">${t('bullishArgs')}</div>
+                        ${tr.bull_points.map(p => '<div class="bull-bear-point bull-point">▲ ' + p + '</div>').join('')}
+                    </div>
+                `;
+            }
+            if (tr.bear_points && tr.bear_points.length > 0) {
+                html += `
+                    <div class="bear-card">
+                        <div class="bull-bear-title">${t('bearishArgs')}</div>
+                        ${tr.bear_points.map(p => '<div class="bull-bear-point bear-point">▼ ' + p + '</div>').join('')}
+                    </div>
+                `;
+            }
+            html += `</div></div>`;
+        }
+        // Risk Warnings
+        if (tr.risk_warnings && tr.risk_warnings.length > 0) {
+            html += `
+                <div class="modal-section">
+                    <div class="risk-warning-banner">
+                        <div class="risk-warning-title">⚠️ ${t('riskWarnings')}</div>
+                        ${tr.risk_warnings.map(w => '<div class="risk-warning-item">' + w + '</div>').join('')}
+                    </div>
+                </div>
+            `;
+        }
     }
     // Dividend Info
     const div = stock.dividend;

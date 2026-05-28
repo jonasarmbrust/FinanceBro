@@ -1,13 +1,16 @@
-"""FinanceBro - Scoring Engine v5
+"""FinanceBro - Scoring Engine v6
 
 Multi-Faktor Bewertungssystem fuer Aktien.
-10 Faktoren mit einheitlicher Prozent-Normalisierung.
+11 Faktoren mit einheitlicher Prozent-Normalisierung.
+
+v6 Aenderungen (gegenueber v5):
+  - 10 -> 11 Faktoren (TipRanks Smart Score als neuer Faktor)
+  - Gewichtung angepasst: bestehende Gewichte um 6% reduziert (×0.94)
+  - tipranks_smart: 6% Gewicht (Smart Score 1-10 skaliert auf 0-100)
+  - Graceful Degradation: TipRanks nur wenn verfuegbar
 
 v5 Aenderungen (gegenueber v4):
   - 9 -> 10 Faktoren (Momentum als separater Faktor)
-  - Gewichtung angepasst: quality 19%, valuation 14%, analyst 15%,
-    technical 13%, growth 11%, quant 10%, sentiment 7%, momentum 6%,
-    insider 3%, esg 2%
   - Revenue Growth / Earnings Growth jetzt echte YoY-Wachstumsraten
   - PEG Ratio direkt von FMP (kein manueller Proxy)
   - _normalize_pct Schwellwert auf < 1.0 verschaerft
@@ -24,25 +27,28 @@ from models import (
     ScoreBreakdown,
     StockScore,
     TechnicalIndicators,
+    TipRanksData,
     YFinanceData,
 )
 
 logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────
-# v5 Gewichtung (10 Faktoren, sum = 1.0)
+# v6 Gewichtung (11 Faktoren, sum = 1.0)
+# Bestehende v5-Gewichte × 0.94 + tipranks_smart 6%
 # ─────────────────────────────────────────────────────────────
 WEIGHTS = {
-    "quality": 0.19,        # ROE, Margins, D/E, Current Ratio
-    "valuation": 0.14,      # PE, EV/EBITDA, PEG, FCF Yield (sektorbasiert)
-    "analyst": 0.15,        # Konsens + Preisziel (merged)
-    "technical": 0.13,      # RSI, SMA, Momentum 30d
-    "growth": 0.11,         # Revenue Growth, Earnings Growth YoY, ROIC
-    "quantitative": 0.10,   # Altman Z-Score, Piotroski Score
-    "momentum": 0.06,       # 3M/6M Kurs-Momentum
-    "sentiment": 0.07,      # Fear & Greed Index
-    "insider": 0.03,        # Insider Buy/Sell Ratio
-    "esg": 0.02,            # ESG Risk Score
+    "quality": 0.1786,       # ROE, Margins, D/E, Current Ratio (war 0.19)
+    "valuation": 0.1316,     # PE, EV/EBITDA, PEG, FCF Yield (war 0.14)
+    "analyst": 0.1410,       # Konsens + Preisziel (war 0.15)
+    "technical": 0.1222,     # RSI, SMA, Momentum 30d (war 0.13)
+    "growth": 0.1034,        # Revenue Growth, Earnings Growth YoY, ROIC (war 0.11)
+    "quantitative": 0.0940,  # Altman Z-Score, Piotroski Score (war 0.10)
+    "momentum": 0.0564,      # 3M/6M Kurs-Momentum (war 0.06)
+    "sentiment": 0.0658,     # Fear & Greed Index (war 0.07)
+    "insider": 0.0282,       # Insider Buy/Sell Ratio (war 0.03)
+    "esg": 0.0188,           # ESG Risk Score (war 0.02)
+    "tipranks_smart": 0.06,  # TipRanks Smart Score (NEU)
 }
 
 # Schwellenwerte
@@ -154,11 +160,12 @@ def calculate_score(
     fear_greed: Optional[FearGreedData] = None,
     technical: Optional[TechnicalIndicators] = None,
     sector: str = "",
+    tipranks_data: Optional[TipRanksData] = None,
     **kwargs,  # Ignoriere unbekannte Legacy-Parameter
 ) -> StockScore:
-    """Berechnet den Gesamtscore fuer eine Aktie (v5).
+    """Berechnet den Gesamtscore fuer eine Aktie (v6).
 
-    10 Faktoren, gewichteter Durchschnitt.
+    11 Faktoren, gewichteter Durchschnitt.
     Nur verfuegbare Faktoren werden beruecksichtigt (Rest skaliert hoch).
     """
     breakdown = ScoreBreakdown()
@@ -241,6 +248,12 @@ def calculate_score(
         available_weight += WEIGHTS["momentum"]
         calculated_factors.add("momentum")
 
+    # --- 11. TipRanks Smart Score (6%) ---
+    if tipranks_data and tipranks_data.smart_score is not None:
+        breakdown.tipranks_score = _calc_tipranks_score(tipranks_data)
+        available_weight += WEIGHTS["tipranks_smart"]
+        calculated_factors.add("tipranks_smart")
+
     # Calculate weighted total score
     if available_weight > 0:
         total = 0.0
@@ -255,6 +268,7 @@ def calculate_score(
             "sentiment": breakdown.sentiment_score,
             "insider": breakdown.insider_score,
             "esg": breakdown.esg_score,
+            "tipranks_smart": breakdown.tipranks_score,
         }
         for key, score_val in factor_map.items():
             if key in calculated_factors:
@@ -286,7 +300,7 @@ def calculate_score(
 
     summary = _build_summary(
         ticker, rating, breakdown, fundamentals, analyst,
-        fmp_rating, yfinance_data, technical, sector,
+        fmp_rating, yfinance_data, technical, sector, tipranks_data,
     )
 
     return StockScore(
@@ -845,6 +859,25 @@ def _calc_esg_score(esg_risk: float) -> float:
         return 15.0
 
 
+def _calc_tipranks_score(tr: TipRanksData) -> float:
+    """TipRanks Score basierend auf Smart Score (1-10).
+
+    Smart Score 1-10 wird auf 0-100 skaliert:
+      score = (smart_score - 1) / 9 * 100
+
+    Zusaetzlich wird Hedge-Fund-Sentiment als Modifikator einbezogen.
+    """
+    # Basis: Smart Score linear skaliert
+    base = (tr.smart_score - 1) / 9 * 100
+
+    # Hedge Fund Sentiment Modifikator (+/- bis zu 5 Punkte)
+    if tr.hedge_fund_sentiment != 0:
+        hf_mod = tr.hedge_fund_sentiment * 5  # -5 bis +5
+        base = base + hf_mod
+
+    return round(max(0, min(100, base)), 1)
+
+
 # ─────────────────────────────────────────────────────────────
 # Summary
 # ─────────────────────────────────────────────────────────────
@@ -859,6 +892,7 @@ def _build_summary(
     yf_data: Optional[YFinanceData] = None,
     technical: Optional[TechnicalIndicators] = None,
     sector: str = "",
+    tipranks_data: Optional[TipRanksData] = None,
 ) -> str:
     """Erstellt eine kurze Zusammenfassung der Bewertung."""
     parts = []
@@ -868,6 +902,9 @@ def _build_summary(
 
     if analyst and analyst.consensus:
         parts.append(f"Analysten: {analyst.consensus}")
+
+    if tipranks_data and tipranks_data.smart_score:
+        parts.append(f"Smart Score: {tipranks_data.smart_score}/10")
 
     if fd and fd.piotroski_score is not None:
         parts.append(f"Piotroski: {fd.piotroski_score}/9")
