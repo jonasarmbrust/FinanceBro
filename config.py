@@ -62,7 +62,7 @@ class Settings(BaseSettings):
 
     # Gemini-Modelle (zentral konfiguriert, via Env-Vars überschreibbar)
     GEMINI_MODEL_PRO: str = "gemini-3.1-pro-preview"
-    GEMINI_MODEL_FLASH: str = "gemini-3-flash-preview"
+    GEMINI_MODEL_FLASH: str = "gemini-3.5-flash"
 
     # Cloud Scheduler API Key (für interne Endpoints ohne Basic Auth)
     SCHEDULER_API_KEY: str = ""
