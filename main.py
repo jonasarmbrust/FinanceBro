@@ -220,7 +220,7 @@ async def lifespan(app: FastAPI):
 
         scheduler.add_job(
             _run_market_monitor, "cron",
-            minute="*/30",
+            minute="5,35",
             hour="9-22",
             day_of_week="mon-fri",
             id="market_monitor",
