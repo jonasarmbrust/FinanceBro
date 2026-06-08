@@ -254,6 +254,30 @@ async def lifespan(app: FastAPI):
             )
             logger.info("🤖 Shadow Portfolio Agent geplant: Mo-Fr 17:00 CET")
 
+        # Proaktiver Parqet Token-Refresh (alle 4h, Mo-Fr)
+        # Verhindert Token-Ablauf durch regelmäßige Erneuerung.
+        # Ohne diesen Job kann der Refresh-Token nach Tagen Inaktivität
+        # ungültig werden → keine Portfolio-Daten → keine Benachrichtigungen.
+        if settings.parqet_api_configured or settings.PARQET_PORTFOLIO_ID:
+            async def _proactive_token_refresh():
+                try:
+                    from fetchers.parqet_auth import ensure_valid_token
+                    token = await ensure_valid_token()
+                    if token:
+                        logger.info("🔑 Parqet Token proaktiv erneuert")
+                    else:
+                        logger.warning("🔑 Parqet Token-Refresh fehlgeschlagen")
+                except Exception as e:
+                    logger.warning(f"Proaktiver Token-Refresh fehlgeschlagen: {e}")
+
+            scheduler.add_job(
+                _proactive_token_refresh, "cron",
+                hour="6,10,14,18,22",
+                day_of_week="mon-fri",
+                id="parqet_token_refresh",
+            )
+            logger.info("🔑 Parqet Token-Refresh geplant: Mo-Fr alle 4h (06-22 Uhr CET)")
+
         # Telegram Webhook registrieren (wenn auf Cloud Run)
         if settings.telegram_configured and settings.ENVIRONMENT == "production":
             async def _register_webhook():

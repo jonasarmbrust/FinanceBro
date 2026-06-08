@@ -24,6 +24,9 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
+# Deduplizierung: Telegram-Alert nur 1x pro Tag senden
+_token_alert_sent_date: str | None = None
+
 TOKEN_FILE = settings.CACHE_DIR / "parqet_tokens.json"
 
 # Parqet API URLs
@@ -358,7 +361,46 @@ async def ensure_valid_token() -> str | None:
         "Parqet Token-Erneuerung fehlgeschlagen. "
         "Bitte /api/parqet/authorize aufrufen fuer OAuth2-Login."
     )
+
+    # Telegram-Alert senden (max 1x pro Tag)
+    await _notify_token_expired()
+
     return None
+
+
+async def _notify_token_expired():
+    """Sendet einen Telegram-Alert wenn der Parqet-Token abgelaufen ist.
+
+    Max 1x pro Tag, um Alert-Spam zu vermeiden.
+    """
+    global _token_alert_sent_date
+
+    if not settings.telegram_configured:
+        return
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    if _token_alert_sent_date == today:
+        return  # Bereits heute gesendet
+
+    try:
+        from services.telegram import send_message
+
+        cloud_run_url = os.environ.get("CLOUD_RUN_URL", "")
+        reauth_link = f"{cloud_run_url}/api/parqet/authorize" if cloud_run_url else "/api/parqet/authorize"
+
+        await send_message(
+            "🔴 *FinanceBro: Parqet-Token abgelaufen!*\n\n"
+            "Der Parqet Refresh-Token ist ungültig. "
+            "Ohne gültige Parqet-Verbindung können keine Portfolio-Daten geladen werden.\n\n"
+            "⚠️ *Auswirkung:* Keine Daily Reports, Market Alerts oder News-Kurator-Alerts.\n\n"
+            f"🔗 *Jetzt neu autorisieren:*\n{reauth_link}"
+        )
+
+        _token_alert_sent_date = today
+        logger.info("📨 Telegram-Alert gesendet: Parqet-Token abgelaufen")
+
+    except Exception as e:
+        logger.debug(f"Token-Ablauf Telegram-Alert fehlgeschlagen: {e}")
 
 
 def load_token_file() -> Optional[dict]:
