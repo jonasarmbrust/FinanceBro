@@ -1,6 +1,6 @@
-"""FinanceBro - Tech-Radar KI-Analyse (v2: Gemini 2.5 Pro).
+"""FinanceBro - Tech-Radar KI-Analyse (v2: Gemini 3.5 Flash).
 
-Nutzt Google Gemini 2.5 Pro für tiefgehende Investment-Analysen
+Nutzt Google Gemini 3.5 Flash für tiefgehende Investment-Analysen
 der Tech-Empfehlungen. Ein einziger API-Call für alle Empfehlungen.
 
 Analyse umfasst:
@@ -25,7 +25,7 @@ async def enrich_with_ai_analysis(
 ) -> list[TechRecommendation]:
     """Reichert Tech-Empfehlungen mit KI-generierten Investment-Analysen an.
 
-    Nutzt Gemini 2.5 Pro für tiefgehende Analysen:
+    Nutzt Gemini 3.5 Flash für tiefgehende Analysen:
       - Bull/Bear-Case pro Aktie
       - Wettbewerbs-Kontext
       - Risikofaktoren

@@ -1,4 +1,4 @@
-"""FinanceBro - Earnings AI Analysis (Gemini 2.5 Pro).
+"""FinanceBro - Earnings AI Analysis (Gemini 3.1 Pro).
 
 Analysiert die letzten/nächsten Earnings von Portfolio-Aktien
 via Google Search Grounding. Ein API-Call für alle Ticker.
@@ -40,7 +40,7 @@ EARNINGS_RESPONSE_SCHEMA = {
 async def analyze_earnings(tickers: list[str]) -> list[EarningsInsight]:
     """Analysiert Earnings für die angegebenen Ticker.
 
-    Nutzt Gemini 2.5 Pro mit Search Grounding für aktuelle Earnings-Daten.
+    Nutzt Gemini 3.1 Pro mit Search Grounding für aktuelle Earnings-Daten.
     Ein einziger API-Call für alle Ticker.
 
     Returns:

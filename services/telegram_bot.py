@@ -5,7 +5,7 @@ Unterstützte Befehle:
   /portfolio — Portfolio-Übersicht mit Scores
   /score AAPL — Score einer einzelnen Aktie
   /refresh — Full Refresh triggern
-  /news   — Freie Marktanalyse durch Gemini 2.5 Pro
+  /news   — Freie Marktanalyse durch Gemini 3.1 Pro
   /alerts — Market Monitor Status & manueller Check
   /earnings — Earnings-Analyse für Portfolio-Aktien
   /risk [szenario] — Risiko-Szenario-Analyse
@@ -325,7 +325,7 @@ _MAX_NEWS_PER_HOUR = 5
 
 
 async def _cmd_news(chat_id: str):
-    """Freie Marktanalyse durch Gemini 2.5 Pro."""
+    """Freie Marktanalyse durch Gemini 3.1 Pro."""
     import time as _time
     from services.telegram import send_message
 
@@ -355,7 +355,7 @@ async def _cmd_news(chat_id: str):
     # Portfolio-Kontext sammeln (wenn vorhanden)
     portfolio_context = _get_portfolio_context()
 
-    # Gemini 2.5 Pro Anfrage
+    # Gemini 3.1 Pro Anfrage
     try:
         from services.vertex_ai import get_client, get_grounded_config, get_cached_content
 
@@ -419,7 +419,7 @@ async def _cmd_news(chat_id: str):
                 contents=prompt,
             )
             result = response.text.strip() if response.text else "Keine Analyse verfügbar."
-            model_used = "Gemini 3 Flash"
+            model_used = "Gemini 3.5 Flash"
 
         except Exception as e2:
             logger.error(f"/news komplett fehlgeschlagen: {e2}")
@@ -548,7 +548,7 @@ async def _cmd_attribution(chat_id: str):
 # ─────────────────────────────────────────────────────────────
 
 async def _cmd_earnings(chat_id: str):
-    """Earnings-Analyse für Portfolio-Aktien via Gemini 2.5 Pro."""
+    """Earnings-Analyse für Portfolio-Aktien via Gemini 3.1 Pro."""
     from services.telegram import send_message
     from state import portfolio_data
 
@@ -604,7 +604,7 @@ async def _cmd_earnings(chat_id: str):
 # ─────────────────────────────────────────────────────────────
 
 async def _cmd_chat(chat_id: str, question: str):
-    """Freier Portfolio-Chat mit Gemini 2.5 Pro."""
+    """Freier Portfolio-Chat mit Gemini 3.5 Flash."""
     from services.telegram import send_message
 
     if not settings.gemini_configured:
@@ -693,7 +693,7 @@ _RISK_SCENARIOS = {
 
 
 async def _cmd_risk(chat_id: str, scenario: Optional[str] = None):
-    """Risiko-Szenario-Analyse via Gemini 2.5 Pro."""
+    """Risiko-Szenario-Analyse via Gemini 3.1 Pro."""
     from services.telegram import send_message
 
     if not scenario:

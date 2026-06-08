@@ -1,4 +1,4 @@
-"""FinanceBro - AI Score Commentary (Gemini 2.0 Flash).
+"""FinanceBro - AI Score Commentary (Gemini 3.5 Flash).
 
 Generiert kurze KI-Kommentare für die auffälligsten Portfolio-Positionen.
 Ein einziger API-Call für bis zu 5 Aktien → kosteneffizient.

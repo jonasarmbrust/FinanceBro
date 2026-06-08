@@ -2,7 +2,7 @@
 
 Autonomer AI-Agent der ein fiktives Portfolio verwaltet:
   1. PERCEPTION  - Liest echtes Portfolio + Marktdaten + Shadow-State
-  2. REASONING   - Gemini 2.5 Pro entscheidet per Function Calling
+  2. REASONING   - Gemini 3.1 Pro entscheidet per Function Calling
   3. ACTION      - Fuehrt fiktive Trades in Shadow-DB aus
   4. REPORTING   - Performance tracking + Decision Log
 
@@ -846,7 +846,7 @@ async def _execute_agent_tool_call(tool_name: str, tool_args: dict, context: dic
 
 
 async def _call_gemini_agent(context: dict, candidates: list[dict]) -> dict:
-    """Ruft Gemini 2.5 Pro auf um Trade-Entscheidungen zu treffen."""
+    """Ruft Gemini 3.1 Pro auf um Trade-Entscheidungen zu treffen."""
     from state import portfolio_data
     from services.vertex_ai import get_client, get_cached_content
     from google.genai.types import Tool, FunctionDeclaration, Part, Content

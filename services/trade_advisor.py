@@ -1,7 +1,7 @@
 """FinanceBro - AI Trade Advisor v2.
 
 Evaluiert Kauf/Verkauf/Aufstocken-Entscheidungen mit:
-  - Gemini 2.5 Pro (AI-Analyse + Google Search Grounding)
+  - Gemini 3.1 Pro (AI-Analyse + Google Search Grounding)
   - Function Calling: Gemini ruft selbst Score/Portfolio/Market-Tools auf
   - Structured Output: Garantiert valides JSON-Response
   - Optionale externe Quellen (Analysten, Artikel, User-Notizen)
@@ -409,7 +409,7 @@ async def _call_gemini_with_tools(
     extra_context: Optional[str],
     lang: str = "de",
 ) -> dict:
-    """Ruft Gemini 2.5 Pro mit Function Calling + Structured Output auf.
+    """Ruft Gemini 3.1 Pro mit Function Calling + Structured Output auf.
 
     Flow:
     1. Sende Prompt + Tool-Definitionen an Gemini

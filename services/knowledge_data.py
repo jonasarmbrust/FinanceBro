@@ -311,7 +311,7 @@ DAILY_TIPS: list[dict] = [
         "title": "Google Gemini API – KI in der eigenen App",
         "text": (
             "🤖 *Gemini Integration*\n\n"
-            "FinanceBro nutzt Gemini 2.5 Pro für:\n"
+            "FinanceBro nutzt Gemini 3.1 Pro für:\n"
             "• Tägliche Portfolio-Analysen\n"
             "• Marktberichte mit Search Grounding\n"
             "• Earnings-Analysen\n"
