@@ -2,9 +2,11 @@
 
 Verwaltet Parqet API Authentication:
 - JWT Token-Validierung (Expiration-Check)
-- Token-Renewal-Kette: Env → Token-Datei → Firefox-Cookie → OAuth2 Refresh
-- Token-Persistierung auf Disk
+- Token-Renewal-Kette: SQLite → Datei → Env → Firefox-Cookie → OAuth2 Refresh
+- Token-Persistierung in SQLite (via Litestream nach GCS repliziert)
+- asyncio.Lock verhindert parallele Refreshes (Token-Rotation-Schutz)
 """
+import asyncio
 import base64
 import glob
 import json
@@ -26,6 +28,11 @@ logger = logging.getLogger(__name__)
 
 # Deduplizierung: Telegram-Alert nur 1x pro Tag senden
 _token_alert_sent_date: str | None = None
+
+# Verhindert parallele Token-Refreshes (Parqet rotiert den Refresh-Token
+# bei jedem Request — parallele Refreshes erzeugen mehrere rotierende Tokens,
+# von denen nur einer gueltig ist)
+_token_refresh_lock = asyncio.Lock()
 
 TOKEN_FILE = settings.CACHE_DIR / "parqet_tokens.json"
 
@@ -131,14 +138,17 @@ def refresh_token_from_firefox() -> str | None:
 
 def get_valid_token() -> Optional[str]:
     """Gibt den aktuellen Access-Token zurück.
-    Prüft zuerst die persistierte Token-Datei, dann .env.
+
+    Prioritaet: SQLite (Litestream) → Token-Datei → Env-Var.
+    SQLite ist die primaere Quelle, da sie via Litestream nach GCS
+    repliziert wird und Deployments ueberlebt.
     """
-    # Check token file (may have been refreshed at runtime)
+    # 1. SQLite (primaer — ueberlebt Deployments via Litestream)
     stored = load_token_file()
     if stored and stored.get("access_token"):
         return stored["access_token"]
 
-    # Fall back to env-configured token
+    # 2. Env-Var (Fallback)
     if settings.PARQET_ACCESS_TOKEN:
         return settings.PARQET_ACCESS_TOKEN
 
@@ -325,47 +335,58 @@ async def ensure_valid_token() -> str | None:
     """Stellt sicher, dass ein gueltiger Parqet-Token verfuegbar ist.
 
     Renewal-Kette:
-    1. Gespeicherter/Env-Token pruefen (JWT exp dekodieren)
+    1. Gespeicherter Token pruefen (SQLite → Datei → Env)
     2. Parqet Connect API Refresh (funktioniert auf Cloud Run!)
     3. Firefox-Cookie als Fallback (nur lokal)
+
+    WICHTIG: Nutzt asyncio.Lock um parallele Refreshes zu verhindern.
+    Parqet rotiert den Refresh-Token bei jedem Use — parallele Refreshes
+    erzeugen mehrere Tokens, von denen nur einer gueltig ist.
 
     Returns:
         Gueltiger Access-Token oder None
     """
-    # Schritt 1: Gespeicherten Token pruefen
+    # Schritt 1: Gespeicherten Token pruefen (ohne Lock — nur Lesen)
     token = get_valid_token()
     if token and not is_token_expired(token):
         return token
 
-    if token:
-        logger.info("Parqet Token abgelaufen, starte automatische Erneuerung...")
-    else:
-        logger.info("Kein Parqet Token vorhanden, versuche Erneuerung...")
+    # Ab hier: Token muss erneuert werden → Lock verwenden
+    async with _token_refresh_lock:
+        # Double-Check: Vielleicht hat ein anderer Request schon erneuert
+        token = get_valid_token()
+        if token and not is_token_expired(token):
+            return token
 
-    # Schritt 2: Connect API Refresh-Token (Cloud Run kompatibel!)
-    stored = load_token_file()
-    if settings.PARQET_REFRESH_TOKEN or (stored and stored.get("refresh_token")):
-        logger.info("Versuche Parqet Connect API Token-Refresh...")
-        new_token = await refresh_connect_token()
+        if token:
+            logger.info("Parqet Token abgelaufen, starte automatische Erneuerung...")
+        else:
+            logger.info("Kein Parqet Token vorhanden, versuche Erneuerung...")
+
+        # Schritt 2: Connect API Refresh-Token (Cloud Run kompatibel!)
+        stored = load_token_file()
+        if settings.PARQET_REFRESH_TOKEN or (stored and stored.get("refresh_token")):
+            logger.info("Versuche Parqet Connect API Token-Refresh...")
+            new_token = await refresh_connect_token()
+            if new_token and not is_token_expired(new_token):
+                logger.info("✅ Parqet Token ueber Connect API erneuert")
+                return new_token
+
+        # Schritt 3: Firefox-Cookie (nur lokal)
+        new_token = refresh_token_from_firefox()
         if new_token and not is_token_expired(new_token):
-            logger.info("✅ Parqet Token ueber Connect API erneuert")
+            logger.info("Parqet Token aus Firefox erneuert")
             return new_token
 
-    # Schritt 3: Firefox-Cookie (nur lokal)
-    new_token = refresh_token_from_firefox()
-    if new_token and not is_token_expired(new_token):
-        logger.info("Parqet Token aus Firefox erneuert")
-        return new_token
+        logger.error(
+            "Parqet Token-Erneuerung fehlgeschlagen. "
+            "Bitte /api/parqet/authorize aufrufen fuer OAuth2-Login."
+        )
 
-    logger.error(
-        "Parqet Token-Erneuerung fehlgeschlagen. "
-        "Bitte /api/parqet/authorize aufrufen fuer OAuth2-Login."
-    )
+        # Telegram-Alert senden (max 1x pro Tag)
+        await _notify_token_expired()
 
-    # Telegram-Alert senden (max 1x pro Tag)
-    await _notify_token_expired()
-
-    return None
+        return None
 
 
 async def _notify_token_expired():
@@ -404,7 +425,27 @@ async def _notify_token_expired():
 
 
 def load_token_file() -> Optional[dict]:
-    """Lädt gespeicherte Tokens aus der Cache-Datei."""
+    """Laedt gespeicherte Tokens.
+
+    Prioritaet:
+    1. SQLite system_state (via Litestream nach GCS repliziert — ueberlebt Deployments)
+    2. Lokale JSON-Datei (Fallback fuer lokale Entwicklung)
+    """
+    # 1. SQLite (primaere Quelle — deployment-sicher)
+    try:
+        from database import get_system_state
+        access = get_system_state("parqet_access_token", "")
+        refresh = get_system_state("parqet_refresh_token", "")
+        if access:
+            return {
+                "access_token": access,
+                "refresh_token": refresh,
+                "updated_at": get_system_state("parqet_token_updated_at", ""),
+            }
+    except Exception:
+        pass
+
+    # 2. Lokale JSON-Datei (Fallback)
     if TOKEN_FILE.exists():
         try:
             return json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
@@ -414,81 +455,35 @@ def load_token_file() -> Optional[dict]:
 
 
 def save_token_file(access_token: str, refresh_token: str):
-    """Persistiert Tokens in der Cache-Datei und auf Cloud Run als Env-Vars."""
-    # 1. Lokale Datei (funktioniert immer, auch lokal)
-    TOKEN_FILE.write_text(
-        json.dumps({
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "updated_at": datetime.now().isoformat(),
-        }, indent=2),
-        encoding="utf-8",
-    )
+    """Persistiert Tokens in SQLite und als lokale JSON-Datei.
 
-    # 2. Auf Cloud Run: Env-Vars aktualisieren (ueberlebt Container-Restarts)
-    if os.environ.get("ENVIRONMENT") == "production" and settings.GCP_PROJECT_ID:
-        _persist_tokens_to_cloud_run(access_token, refresh_token)
-
-
-def _persist_tokens_to_cloud_run(access_token: str, refresh_token: str):
-    """Speichert Tokens als Cloud Run Env-Vars ueber die Admin API.
-
-    Nutzt den Service Account des Containers fuer Auth.
-    Laeuft in einem Background-Thread um den Request nicht zu blockieren.
+    SQLite wird via Litestream nach GCS repliziert (sync-interval: 5s).
+    Damit ueberleben die Tokens Container-Neustarts UND Deployments —
+    ohne Cloud Run Env-Vars patchen zu muessen (was 409 Conflicts
+    bei gleichzeitigen Deployments verursacht hat).
     """
-    import threading
+    now = datetime.now().isoformat()
 
-    def _update():
-        try:
-            import google.auth
-            import google.auth.transport.requests
-            from google.auth import default as google_auth_default
+    # 1. SQLite (primaer — deployment-sicher via Litestream)
+    try:
+        from database import set_system_state
+        set_system_state("parqet_access_token", access_token)
+        set_system_state("parqet_refresh_token", refresh_token)
+        set_system_state("parqet_token_updated_at", now)
+        logger.debug("Parqet Tokens in SQLite gespeichert")
+    except Exception as e:
+        logger.warning(f"Parqet Token SQLite-Persist fehlgeschlagen: {e}")
 
-            credentials, project = google_auth_default()
-            auth_req = google.auth.transport.requests.Request()
-            credentials.refresh(auth_req)
-
-            # Cloud Run Admin API: aktuellen Service lesen, Env-Vars updaten
-            region = settings.GCP_LOCATION
-            service_name = "financebro"
-            url = (
-                f"https://run.googleapis.com/v2/projects/{project}/"
-                f"locations/{region}/services/{service_name}"
-            )
-
-            import urllib.request
-            import json as _json
-
-            # GET: aktuellen Service lesen
-            req = urllib.request.Request(url)
-            req.add_header("Authorization", f"Bearer {credentials.token}")
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                service = _json.loads(resp.read())
-
-            # Env-Vars im Template updaten
-            containers = service["template"]["containers"]
-            for container in containers:
-                env_vars = container.get("env", [])
-                # Bestehende Parqet-Token-Vars entfernen
-                env_vars = [e for e in env_vars if e["name"] not in (
-                    "PARQET_ACCESS_TOKEN", "PARQET_REFRESH_TOKEN"
-                )]
-                # Neue Werte setzen
-                env_vars.append({"name": "PARQET_ACCESS_TOKEN", "value": access_token})
-                env_vars.append({"name": "PARQET_REFRESH_TOKEN", "value": refresh_token})
-                container["env"] = env_vars
-
-            # PATCH: Service updaten
-            patch_data = _json.dumps(service).encode()
-            patch_req = urllib.request.Request(url, data=patch_data, method="PATCH")
-            patch_req.add_header("Authorization", f"Bearer {credentials.token}")
-            patch_req.add_header("Content-Type", "application/json")
-            with urllib.request.urlopen(patch_req, timeout=30) as resp:
-                logger.info("Parqet Tokens als Cloud Run Env-Vars gespeichert")
-
-        except Exception as e:
-            logger.warning(f"Cloud Run Env-Var Update fehlgeschlagen: {e}")
-            # Nicht kritisch — Token ist lokal gespeichert und im Memory
-
-    threading.Thread(target=_update, daemon=True).start()
+    # 2. Lokale JSON-Datei (Fallback + lokale Entwicklung)
+    try:
+        TOKEN_FILE.write_text(
+            json.dumps({
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "updated_at": now,
+            }, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as e:
+        logger.debug(f"Token JSON-Datei konnte nicht geschrieben werden: {e}")
 
