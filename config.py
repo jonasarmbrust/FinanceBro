@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     # Google Gemini / Vertex AI
     GEMINI_API_KEY: str = ""
     GCP_PROJECT_ID: str = ""
-    GCP_LOCATION: str = "europe-west1"
+    GCP_LOCATION: str = "us-central1"
     GCS_BUCKET_NAME: str = "financebro-data"
 
     # AI Finance Agent

@@ -3346,6 +3346,7 @@ async function importCsvPortfolio() {
 
 let shadowPerformanceChartInstance = null;
 let shadowData = null;
+let shadowCurrentSort = 'value-desc';
 
 /**
  * Called when the Shadow tab becomes active.
@@ -3429,8 +3430,30 @@ function renderShadowKpis(data) {
 }
 
 /**
- * Renders the Shadow positions table.
+ * Sorts the Shadow positions table by the given field.
+ * Toggles asc/desc on repeated clicks (name defaults to asc, everything else to desc).
  */
+function sortShadowTable(field) {
+    const [curField, curDir] = shadowCurrentSort.split('-');
+    if (curField === field) {
+        shadowCurrentSort = field + '-' + (curDir === 'desc' ? 'asc' : 'desc');
+    } else {
+        shadowCurrentSort = field + '-' + (field === 'name' ? 'asc' : 'desc');
+    }
+    const [newField, newDir] = shadowCurrentSort.split('-');
+    const arrow = newDir === 'desc' ? ' ▼' : ' ▲';
+
+    // Update column header arrows
+    document.querySelectorAll('#shadowPositionsTable .sort-arrow').forEach(el => el.textContent = '');
+    const arrowEl = document.getElementById('shadow-sort-' + newField);
+    if (arrowEl) arrowEl.textContent = arrow;
+
+    // Re-render with current data
+    if (shadowData && shadowData.positions) {
+        renderShadowPositions(shadowData.positions);
+    }
+}
+
 function renderShadowPositions(positions) {
     const tbody = document.getElementById('shadowPositionsBody');
     const emptyEl = document.getElementById('shadowPositionsEmpty');
@@ -3445,6 +3468,30 @@ function renderShadowPositions(positions) {
     }
 
     if (emptyEl) emptyEl.style.display = 'none';
+
+    // Sort positions
+    const [field, dir] = shadowCurrentSort.split('-');
+    const mult = dir === 'desc' ? -1 : 1;
+    nonInitPositions.sort((a, b) => {
+        switch (field) {
+            case 'name':
+                return mult * (a.name || a.ticker).localeCompare(b.name || b.ticker);
+            case 'price':
+                return mult * (a.current_price_eur - b.current_price_eur);
+            case 'cost':
+                return mult * (a.avg_cost_eur - b.avg_cost_eur);
+            case 'daily':
+                return mult * ((a.daily_change_pct || 0) - (b.daily_change_pct || 0));
+            case 'shares':
+                return mult * (a.shares - b.shares);
+            case 'value':
+                return mult * (a.value_eur - b.value_eur);
+            case 'pnl':
+                return mult * (a.pnl_pct - b.pnl_pct);
+            default:
+                return 0;
+        }
+    });
 
     tbody.innerHTML = nonInitPositions.map(p => {
         const value = p.value_eur;
@@ -3512,8 +3559,28 @@ async function loadShadowPerformanceChart(days, btn) {
             fetch(`/api/portfolio/history?days=${days}`),
         ]);
 
-        const shadowPerf = shadowRes.ok ? await shadowRes.json() : [];
-        const realPerf = realRes.ok ? await realRes.json() : [];
+        let shadowPerf = shadowRes.ok ? await shadowRes.json() : [];
+        let realPerf = realRes.ok ? await realRes.json() : [];
+
+        // ── Outlier-Filter: Entferne Ausreißer aus den Performance-Daten ──
+        // Datenpunkte die >30% vom Median der Nachbarn abweichen werden entfernt.
+        function removeOutliers(data, valueKey) {
+            if (data.length < 3) return data;
+            const values = data.map(d => d[valueKey]).filter(v => v != null && v > 0);
+            if (values.length < 3) return data;
+            // Median berechnen
+            const sorted = [...values].sort((a, b) => a - b);
+            const median = sorted[Math.floor(sorted.length / 2)];
+            // Ausreißer: >30% Abweichung vom Median
+            return data.filter(d => {
+                const v = d[valueKey];
+                if (v == null || v <= 0) return false;
+                const deviation = Math.abs(v - median) / median;
+                return deviation < 0.30;
+            });
+        }
+        shadowPerf = removeOutliers(shadowPerf, 'total_value_eur');
+        realPerf = removeOutliers(realPerf, 'total_value');
 
         if (shadowPerformanceChartInstance) shadowPerformanceChartInstance.destroy();
 

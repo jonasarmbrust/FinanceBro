@@ -610,13 +610,13 @@
                             <table class="portfolio-table" id="shadowPositionsTable">
                                 <thead>
                                     <tr>
-                                        <th data-i18n="name">Aktie</th>
-                                        <th data-i18n="price">Kurs</th>
-                                        <th data-i18n="costBasis">Einstand</th>
-                                        <th data-i18n="todayShort">Heute</th>
-                                        <th data-i18n="shares">Stk.</th>
-                                        <th data-i18n="value">Wert</th>
-                                        <th>P&amp;L</th>
+                                        <th class="sortable" onclick="sortShadowTable('name')"><span data-i18n="name">Aktie</span> <span class="sort-arrow" id="shadow-sort-name"></span></th>
+                                        <th class="sortable" onclick="sortShadowTable('price')"><span data-i18n="price">Kurs</span> <span class="sort-arrow" id="shadow-sort-price"></span></th>
+                                        <th class="sortable" onclick="sortShadowTable('cost')"><span data-i18n="costBasis">Einstand</span> <span class="sort-arrow" id="shadow-sort-cost"></span></th>
+                                        <th class="sortable" onclick="sortShadowTable('daily')"><span data-i18n="todayShort">Heute</span> <span class="sort-arrow" id="shadow-sort-daily"></span></th>
+                                        <th class="sortable" onclick="sortShadowTable('shares')"><span data-i18n="shares">Stk.</span> <span class="sort-arrow" id="shadow-sort-shares"></span></th>
+                                        <th class="sortable" onclick="sortShadowTable('value')"><span data-i18n="value">Wert</span> <span class="sort-arrow" id="shadow-sort-value"></span></th>
+                                        <th class="sortable" onclick="sortShadowTable('pnl')">P&amp;L <span class="sort-arrow" id="shadow-sort-pnl"></span></th>
                                     </tr>
                                 </thead>
                                 <tbody id="shadowPositionsBody"></tbody>
