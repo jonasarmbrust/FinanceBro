@@ -1,10 +1,11 @@
 """FinanceBro - TipRanks MCP Fetcher
 
 Kommuniziert mit dem TipRanks MCP-Server (https://mcp.tipranks.com/mcp/)
-über das MCP-Protokoll (JSON-RPC über HTTP, Streamable HTTP Transport).
+über das MCP-Protokoll (JSON-RPC über Streamable HTTP / SSE Transport).
 
 Features:
-  - MCP Session-Management (initialize → tools/call)
+  - MCP Session-Management (initialize → notifications/initialized → tools/call)
+  - SSE Response Parsing (Server antwortet mit text/event-stream)
   - Rate Limiting (pro Minute + pro Tag)
   - CacheManager-Integration (6h TTL)
   - Graceful Degradation bei Fehlern
@@ -14,6 +15,7 @@ Authentifizierung via API-Key als Query-Parameter.
 import asyncio
 import json
 import logging
+import re
 import time
 from typing import Any, Optional
 
@@ -93,11 +95,63 @@ def _get_base_url() -> str:
     return f"https://mcp.tipranks.com/mcp/?apikey={settings.TIPRANKS_API_KEY}"
 
 
+# ─── MCP Streamable HTTP Headers ────────────────────────────
+_MCP_HEADERS = {
+    "Content-Type": "application/json",
+    "Accept": "application/json, text/event-stream",
+}
+
+
+def _parse_sse_response(text: str) -> Optional[dict]:
+    """Parsed eine SSE-Response (text/event-stream) und extrahiert den JSON-Body.
+
+    TipRanks MCP antwortet im SSE-Format:
+        event: message
+        data: {"jsonrpc":"2.0","id":1,"result":{...}}
+
+    Kann mehrere Events enthalten — wir nehmen das letzte mit 'data:'.
+    """
+    last_data = None
+    for line in text.split("\n"):
+        line = line.strip()
+        if line.startswith("data: "):
+            last_data = line[6:]  # Strip "data: " prefix
+        elif line.startswith("data:"):
+            last_data = line[5:]
+
+    if last_data:
+        try:
+            return json.loads(last_data)
+        except json.JSONDecodeError as e:
+            logger.error(f"TipRanks SSE JSON-Parse-Fehler: {e}")
+    return None
+
+
+def _parse_response(resp: httpx.Response) -> Optional[dict]:
+    """Parsed die HTTP-Response — unterstützt JSON und SSE."""
+    content_type = resp.headers.get("content-type", "")
+
+    if "text/event-stream" in content_type:
+        return _parse_sse_response(resp.text)
+    elif "application/json" in content_type:
+        try:
+            return resp.json()
+        except json.JSONDecodeError:
+            return None
+
+    # Fallback: Versuche beide Formate
+    try:
+        return resp.json()
+    except Exception:
+        return _parse_sse_response(resp.text)
+
+
 async def _initialize_session(client: httpx.AsyncClient) -> Optional[str]:
     """Initialisiert eine MCP-Session und gibt die Session-ID zurück.
 
     Sendet einen JSON-RPC `initialize` Request an den MCP-Server.
     Die Session-ID wird aus dem Response-Header `Mcp-Session-Id` extrahiert.
+    Danach wird `notifications/initialized` gesendet (MCP-Protokoll-Pflicht).
     """
     payload = {
         "jsonrpc": "2.0",
@@ -117,27 +171,51 @@ async def _initialize_session(client: httpx.AsyncClient) -> Optional[str]:
         resp = await client.post(
             _get_base_url(),
             json=payload,
-            headers={"Content-Type": "application/json"},
+            headers=_MCP_HEADERS,
             timeout=15.0,
         )
         resp.raise_for_status()
 
+        # Session-ID aus Header
         session_id = resp.headers.get("Mcp-Session-Id") or resp.headers.get("mcp-session-id")
-        if session_id:
-            logger.info(f"TipRanks MCP Session initialisiert: {session_id[:12]}...")
-            return session_id
 
-        # Fallback: Manche MCP-Server liefern Session-ID im Body
-        body = resp.json()
-        if "error" in body:
-            logger.error(f"TipRanks MCP initialize Fehler: {body['error']}")
-            return None
+        # Fallback: Session-ID aus Response-Body parsen (bei SSE)
+        if not session_id:
+            body = _parse_response(resp)
+            if body and "error" in body:
+                logger.error(f"TipRanks MCP initialize Fehler: {body['error']}")
+                return None
+            # Manche Server liefern Session-ID nur im Header — ohne ID können wir
+            # trotzdem fortfahren wenn der Server es erlaubt
+            logger.info("TipRanks MCP: Keine Session-ID — versuche sessionless Modus")
+            return "__sessionless__"
 
-        logger.warning("TipRanks MCP: Keine Session-ID im Response-Header")
-        return None
+        logger.info(f"TipRanks MCP Session initialisiert: {session_id[:16]}...")
+
+        # MCP-Pflicht: notifications/initialized senden
+        try:
+            await client.post(
+                _get_base_url(),
+                json={
+                    "jsonrpc": "2.0",
+                    "method": "notifications/initialized",
+                },
+                headers={
+                    **_MCP_HEADERS,
+                    "Mcp-Session-Id": session_id,
+                },
+                timeout=10.0,
+            )
+        except Exception:
+            pass  # Notification ist best-effort
+
+        return session_id
 
     except httpx.HTTPStatusError as e:
-        logger.error(f"TipRanks MCP initialize HTTP-Fehler: {e.response.status_code}")
+        logger.error(
+            f"TipRanks MCP initialize HTTP-Fehler: {e.response.status_code} — "
+            f"{e.response.text[:200]}"
+        )
         return None
     except Exception as e:
         logger.error(f"TipRanks MCP initialize fehlgeschlagen: {e}")
@@ -181,10 +259,9 @@ async def _call_tool(
         },
     }
 
-    headers = {
-        "Content-Type": "application/json",
-        "Mcp-Session-Id": session_id,
-    }
+    headers = {**_MCP_HEADERS}
+    if session_id and session_id != "__sessionless__":
+        headers["Mcp-Session-Id"] = session_id
 
     try:
         resp = await client.post(
@@ -205,7 +282,12 @@ async def _call_tool(
             )
 
         resp.raise_for_status()
-        body = resp.json()
+
+        # Response parsen (JSON oder SSE)
+        body = _parse_response(resp)
+        if not body:
+            logger.warning(f"TipRanks MCP: Unparseable Response für {tool_name}")
+            return None
 
         if "error" in body:
             logger.error(f"TipRanks MCP Tool-Fehler ({tool_name}): {body['error']}")
@@ -217,12 +299,21 @@ async def _call_tool(
         if content and isinstance(content, list) and len(content) > 0:
             text_data = content[0].get("text", "")
             if text_data:
-                return json.loads(text_data)
+                try:
+                    return json.loads(text_data)
+                except json.JSONDecodeError:
+                    # Manche Tools liefern reinen Text statt JSON
+                    logger.debug(f"TipRanks {tool_name}: Text statt JSON — {text_data[:200]}")
+                    return {"_raw_text": text_data}
 
         logger.warning(f"TipRanks MCP: Leeres Ergebnis für {tool_name}")
         return None
 
     except httpx.HTTPStatusError as e:
+        # Session abgelaufen? Reset und Retry
+        if e.response.status_code in (401, 403):
+            logger.warning(f"TipRanks Session abgelaufen — Reset")
+            reset_session()
         logger.error(f"TipRanks MCP HTTP-Fehler ({tool_name}): {e.response.status_code}")
         return None
     except json.JSONDecodeError as e:
@@ -366,116 +457,124 @@ async def fetch_tipranks_batch(tickers: list[str]) -> dict[str, "TipRanksData"]:
 def _parse_tipranks_response(raw: dict, ticker: str) -> Optional["TipRanksData"]:
     """Parsed die TipRanks MCP-Antwort in ein TipRanksData-Objekt.
 
-    Unterstützt verschiedene Response-Formate (Einzel-Ticker und Batch).
+    TipRanks API liefert: {"assetsData": [{"ticker": "AAPL", "smartScore": 9, ...}]}
+    Felder sind flach (nicht verschachtelt).
     """
     from models import TipRanksData
 
-    # Response kann direkt die Daten enthalten oder unter dem Ticker-Key
-    data = raw
-    if ticker in raw:
-        data = raw[ticker]
-    elif "data" in raw:
-        data = raw["data"]
-        if isinstance(data, dict) and ticker in data:
-            data = data[ticker]
-        elif isinstance(data, list) and len(data) > 0:
-            # Erstes Element nehmen (bei Einzel-Ticker-Request)
-            data = data[0]
+    # Wenn raw ein _raw_text Fallback ist, können wir nichts parsen
+    if "_raw_text" in raw:
+        logger.debug(f"TipRanks {ticker}: Nur Text-Response verfügbar")
+        return None
+
+    # Daten aus assetsData-Array extrahieren
+    data = None
+    assets = raw.get("assetsData") or raw.get("assets_data") or []
+
+    if isinstance(assets, list):
+        # Ticker im Array suchen
+        for asset in assets:
+            if isinstance(asset, dict):
+                asset_ticker = asset.get("ticker", "").upper()
+                if asset_ticker == ticker.upper():
+                    data = asset
+                    break
+        # Fallback: Erstes Element bei Einzel-Ticker-Request
+        if data is None and len(assets) == 1 and isinstance(assets[0], dict):
+            data = assets[0]
+
+    # Fallback: Direkte Daten (ohne assetsData-Wrapper)
+    if data is None:
+        if ticker in raw:
+            data = raw[ticker]
+        elif ticker.upper() in raw:
+            data = raw[ticker.upper()]
+        elif "smartScore" in raw or "smart_score" in raw:
+            data = raw  # Direkt die Daten
 
     if not data or not isinstance(data, dict):
+        logger.debug(f"TipRanks {ticker}: Keine Daten in Response (keys: {list(raw.keys())[:5]})")
         return None
 
     # Smart Score extrahieren (Pflichtfeld)
-    smart_score = (
-        data.get("tipranksSmartScore")
-        or data.get("smartScore")
-        or data.get("smart_score")
-    )
+    smart_score = data.get("smartScore") or data.get("smart_score")
     if smart_score is None:
         logger.debug(f"TipRanks {ticker}: Kein Smart Score in Response")
         return None
 
     smart_score = max(1, min(10, int(smart_score)))
 
-    # Analyst-Daten
-    analyst_consensus_data = data.get("analystConsensus") or data.get("analyst_consensus") or {}
-    if isinstance(analyst_consensus_data, str):
-        consensus_str = analyst_consensus_data
-        buy = hold = sell = analyst_count = 0
-    else:
-        consensus_str = analyst_consensus_data.get("consensus", "Hold")
-        buy = int(analyst_consensus_data.get("buy", 0) or 0)
-        hold = int(analyst_consensus_data.get("hold", 0) or 0)
-        sell = int(analyst_consensus_data.get("sell", 0) or 0)
-        analyst_count = buy + hold + sell
+    # Analyst Consensus (TipRanks liefert direkt als String: "Buy", "Hold", "Sell")
+    consensus_str = data.get("analystConsensus") or data.get("analyst_consensus") or ""
+    best_consensus = data.get("bestAnalystConsensus") or ""
 
-    # Preisziele
-    price_targets = data.get("priceTarget") or data.get("price_target") or {}
-    if isinstance(price_targets, dict):
-        pt_avg = float(price_targets.get("average", 0) or 0)
-        pt_high = float(price_targets.get("high", 0) or 0)
-        pt_low = float(price_targets.get("low", 0) or 0)
-    else:
-        pt_avg = pt_high = pt_low = 0.0
+    # TipRanks liefert keine Buy/Hold/Sell Counts im get_assets_data Endpoint
+    # Setze 0 als Default — detaillierte Daten kämen über get_analyst_ratings
+    buy = 0
+    hold = 0
+    sell = 0
+    analyst_count = 0
 
-    # Upside berechnen
-    upside = float(data.get("upsidePotential", 0) or data.get("upside_potential", 0) or 0)
+    # Preisziel (TipRanks liefert als einzelne Zahl, nicht verschachtelt)
+    pt_avg = float(data.get("priceTarget") or data.get("price_target") or 0)
 
-    # Hedge Fund Daten
-    hf_data = data.get("hedgeFundActivity") or data.get("hedge_fund") or {}
-    if isinstance(hf_data, dict):
-        hf_trend = hf_data.get("trend", "")
-        hf_sentiment = float(hf_data.get("sentiment", 0.0) or 0)
-    else:
-        hf_trend = ""
-        hf_sentiment = 0.0
+    # Upside (TipRanks liefert als Dezimalzahl, z.B. 0.1139 = 11.39%)
+    upside_raw = data.get("priceTargetUpside") or data.get("upside_potential") or 0
+    upside = float(upside_raw)
+    if abs(upside) < 5:  # Dezimalformat (0.11 = 11%)
+        upside = upside * 100
 
-    # Insider-Trend
-    insider_data = data.get("insiderActivity") or data.get("insider") or {}
-    if isinstance(insider_data, dict):
-        insider_trend = insider_data.get("trend", "")
-    elif isinstance(insider_data, str):
-        insider_trend = insider_data
-    else:
-        insider_trend = ""
+    # Hedge Fund Score (0-1 Skala)
+    hf_score = float(data.get("hedgeFundsScore") or data.get("hedge_fund_score") or 0)
+    hf_trend = "Bullish" if hf_score > 0.5 else "Bearish" if hf_score < 0.3 else "Neutral"
 
-    # News Sentiment
-    news_sentiment = float(data.get("newsSentiment", 0.0) or data.get("news_sentiment", 0.0) or 0)
+    # Insider Score (0-1 Skala)
+    insider_score = float(data.get("insiderScore") or data.get("insider_score") or 0)
+    insider_trend = "Positive" if insider_score > 0.5 else "Negative" if insider_score < 0.3 else "Neutral"
 
-    # Investor Sentiment
-    investor_sentiment = float(
-        data.get("investorSentiment", 0.0) or data.get("investor_sentiment", 0.0) or 0
-    )
-
-    # Bull/Bear-Punkte und Risiko-Warnungen
-    bull_points = data.get("bullPoints") or data.get("bull_points") or []
-    bear_points = data.get("bearPoints") or data.get("bear_points") or []
-    risk_warnings = data.get("riskWarnings") or data.get("risk_warnings") or []
-
-    # Peers Comparison
-    peers = data.get("peersComparison") or data.get("peers_comparison") or []
+    # News Sentiment (0-1 Skala, wobei >0.5 = positiv)
+    news_sentiment = float(data.get("newsSentiment") or data.get("news_sentiment") or 0)
 
     return TipRanksData(
         smart_score=smart_score,
-        analyst_consensus=consensus_str,
+        analyst_consensus=best_consensus or consensus_str,
         analyst_count=analyst_count,
         buy_count=buy,
         hold_count=hold,
         sell_count=sell,
         price_target_avg=pt_avg,
-        price_target_high=pt_high,
-        price_target_low=pt_low,
-        upside_potential=upside,
+        price_target_high=0.0,  # Nicht im get_assets_data Endpoint
+        price_target_low=0.0,
+        upside_potential=round(upside, 1),
         hedge_fund_trend=hf_trend,
-        hedge_fund_sentiment=hf_sentiment,
+        hedge_fund_sentiment=hf_score,
         insider_trend=insider_trend,
         news_sentiment=news_sentiment,
-        bull_points=bull_points if isinstance(bull_points, list) else [],
-        bear_points=bear_points if isinstance(bear_points, list) else [],
-        risk_warnings=risk_warnings if isinstance(risk_warnings, list) else [],
-        investor_sentiment=investor_sentiment,
-        peers_comparison=peers if isinstance(peers, list) else [],
+        bull_points=[],   # Nicht im get_assets_data — käme über get_bull_bear_summary
+        bear_points=[],
+        risk_warnings=[],
+        investor_sentiment=0.0,
+        peers_comparison=[],
     )
+
+
+def flush_cache():
+    """Schreibt den TipRanks-Cache auf Disk."""
+    _cache.flush()
+
+
+def clear_cache():
+    """Löscht den TipRanks-Cache."""
+    _cache.clear()
+
+
+def reset_session():
+    """Setzt die MCP-Session zurück (z.B. nach Fehler)."""
+    global _session_id
+    _session_id = None
+    logger.info("TipRanks MCP Session zurückgesetzt")
+
+
 
 
 def flush_cache():

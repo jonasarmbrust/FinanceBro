@@ -233,9 +233,11 @@ class TestEvaluateTrackRecords:
 class TestComputeVerifiedConsensus:
     def test_bullish_verified(self):
         """Verifizierte Firmen mit Buy-Ratings → Verified Consensus = Buy."""
+        from datetime import datetime
+        now_str = datetime.now().strftime("%Y-%m-%d")
         ratings = [
-            AnalystRating(firm="Good Firm", to_grade="Buy", date="2025-12-01"),
-            AnalystRating(firm="Good Firm", to_grade="Buy", date="2025-11-01"),
+            AnalystRating(firm="Good Firm", to_grade="Buy", date=now_str),
+            AnalystRating(firm="Good Firm", to_grade="Buy", date=now_str),
         ]
         track_records = [
             AnalystTrackRecord(
@@ -248,8 +250,10 @@ class TestComputeVerifiedConsensus:
 
     def test_firm_below_threshold_excluded(self):
         """Firmen unter dem Success-Rate-Schwellenwert werden ignoriert."""
+        from datetime import datetime
+        now_str = datetime.now().strftime("%Y-%m-%d")
         ratings = [
-            AnalystRating(firm="Bad Firm", to_grade="Buy", date="2025-12-01"),
+            AnalystRating(firm="Bad Firm", to_grade="Buy", date=now_str),
         ]
         track_records = [
             AnalystTrackRecord(
@@ -262,8 +266,10 @@ class TestComputeVerifiedConsensus:
 
     def test_firm_too_few_ratings_excluded(self):
         """Firmen mit zu wenigen Ratings werden ignoriert."""
+        from datetime import datetime
+        now_str = datetime.now().strftime("%Y-%m-%d")
         ratings = [
-            AnalystRating(firm="New Firm", to_grade="Buy", date="2025-12-01"),
+            AnalystRating(firm="New Firm", to_grade="Buy", date=now_str),
         ]
         track_records = [
             AnalystTrackRecord(
