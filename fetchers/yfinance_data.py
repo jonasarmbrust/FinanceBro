@@ -25,6 +25,17 @@ _executor = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_pre
 # Pattern to detect ISINs (12 chars, 2 letter country + 10 alphanumeric)
 _ISIN_PATTERN = re.compile(r"^[A-Z]{2}[A-Z0-9]{10}$")
 
+# Datum der letzten Handelsdaten (gesetzt von quick_price_update).
+# Wird vom Market Monitor genutzt um veraltete Alerts zu verhindern:
+# Wenn _latest_trading_date < heute, stammen die daily_change_pct
+# Werte vom Vortag und sollten keine Alerts auslösen.
+_latest_trading_date = None
+
+
+def get_latest_trading_date():
+    """Gibt das Datum der neuesten Handelsdaten zurück (date oder None)."""
+    return _latest_trading_date
+
 
 def _is_valid_ticker(symbol: str) -> bool:
     """Check if symbol looks like a real ticker (not an ISIN)."""
@@ -282,6 +293,7 @@ async def quick_price_update(tickers: list[str]) -> tuple[dict[str, float], dict
         prices = {}
         daily_changes = {}
         prev_closes = {}
+        max_data_date = None  # Neuestes Handelsdatum für Freshness-Check
 
         # In kleineren Batches laden (Cloud Run hat begrenztes Netzwerk/CPU)
         CHUNK_SIZE = 5
@@ -313,6 +325,11 @@ async def quick_price_update(tickers: list[str]) -> tuple[dict[str, float], dict
                             col = _get_close_series(daily_data, ticker)
                             if col is not None and len(col) > 0:
                                 daily_series[ticker] = col
+                                # Handelsdatum tracken (letzter abgeschlossener Handelstag)
+                                _dtd = col.index[-1]
+                                _dtd = _dtd.date() if hasattr(_dtd, 'date') else _dtd
+                                if max_data_date is None or _dtd > max_data_date:
+                                    max_data_date = _dtd
                                 last_close = float(col.iloc[-1])
                                 if last_close > 0 and not math.isnan(last_close):
                                     prices[ticker] = round(last_close, 2)
@@ -345,6 +362,11 @@ async def quick_price_update(tickers: list[str]) -> tuple[dict[str, float], dict
                             try:
                                 col = _get_close_series(intraday, ticker)
                                 if col is not None and len(col) > 0:
+                                    # Intraday-Datum tracken (heute wenn Markt offen)
+                                    _itd = col.index[-1]
+                                    _itd = _itd.date() if hasattr(_itd, 'date') else _itd
+                                    if max_data_date is None or _itd > max_data_date:
+                                        max_data_date = _itd
                                     latest = float(col.iloc[-1])
                                     if latest > 0 and not math.isnan(latest):
                                         prices[ticker] = round(latest, 2)
@@ -405,15 +427,21 @@ async def quick_price_update(tickers: list[str]) -> tuple[dict[str, float], dict
         else:
             logger.info(f"[YF-BATCH] Result: {len(prices)} prices, {len(daily_changes)} daily changes")
 
-        return prices, daily_changes
+        return prices, daily_changes, max_data_date
 
     try:
+        global _latest_trading_date
         loop = asyncio.get_running_loop()
-        prices, daily_changes = await asyncio.wait_for(
+        prices, daily_changes, data_date = await asyncio.wait_for(
             loop.run_in_executor(_executor, _batch_download),
             timeout=90.0,
         )
-        logger.info(f"📊 yfinance Kurs-Update: {len(prices)}/{len(valid_tickers)} Ticker, {len(daily_changes)} Daily Changes")
+        if data_date is not None:
+            _latest_trading_date = data_date
+        logger.info(
+            f"📊 yfinance Kurs-Update: {len(prices)}/{len(valid_tickers)} Ticker, "
+            f"{len(daily_changes)} Daily Changes (Handelstag: {data_date})"
+        )
         return prices, daily_changes
     except asyncio.TimeoutError:
         logger.warning("yfinance batch download Timeout (90s)")

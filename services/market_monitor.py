@@ -166,6 +166,24 @@ async def check_market_events(force: bool = False) -> dict:
         logger.debug("Market Monitor: Keine Portfolio-Daten")
         return {"events_detected": 0, "alerts_sent": 0, "events": []}
 
+    # Frische-Check: Verhindert veraltete Alerts nach Cold Start.
+    # Wenn die Handelsdaten von einem früheren Tag stammen (z.B. Freitag),
+    # reflektieren die daily_change_pct Werte gestrige Kursbewegungen
+    # und würden fälschlicherweise als heutige Alerts gesendet.
+    if not force:
+        try:
+            from fetchers.yfinance_data import get_latest_trading_date
+            latest_trading = get_latest_trading_date()
+            today = date.today()
+            if latest_trading is not None and latest_trading < today:
+                logger.info(
+                    f"Market Monitor: Handelsdaten von {latest_trading} (heute: {today}) — "
+                    "überspringe Alerts (Daily Changes veraltet nach Cold Start)"
+                )
+                return {"events_detected": 0, "alerts_sent": 0, "events": [], "skipped": "stale_data"}
+        except Exception:
+            pass
+
     events = []
 
     # 1. Portfolio-Level Events
