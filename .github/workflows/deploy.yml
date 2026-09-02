@@ -90,6 +90,7 @@ jobs:
             --update-env-vars="PRICE_UPDATE_INTERVAL_MIN=30" \
             --update-env-vars="SCHEDULER_API_KEY=${{ secrets.SCHEDULER_API_KEY }}" \
             --update-env-vars="CLOUD_RUN_URL=https://financebro-384210760656.europe-west1.run.app" \
+            --update-env-vars="CLOUD_PROCESSING_ENABLED=false" \
             --quiet
 
       - name: Show service URL
