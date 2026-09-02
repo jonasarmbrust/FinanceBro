@@ -116,6 +116,10 @@ async def trigger_report():
     Hat Cold-Start-Resilience: wartet bis zu 120s auf Portfolio-Daten.
     Aktualisiert Kurse vor dem Versand für aktuelle Daily Changes.
     """
+    if not settings.CLOUD_PROCESSING_ENABLED:
+        logger.info("📨 Daily Report übersprungen (CLOUD_PROCESSING_ENABLED=false)")
+        return {"status": "disabled", "message": "Cloud-Verarbeitung deaktiviert (CLOUD_PROCESSING_ENABLED=false)"}
+
     if not settings.telegram_configured:
         return {"status": "error", "message": "Telegram nicht konfiguriert (TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID fehlen)"}
 
@@ -156,6 +160,10 @@ async def trigger_weekly_digest():
     2. Quick-Price-Refresh (aktuelle Kurse nach US-Börsenschluss)
     3. Weekly Digest generieren und via Telegram senden
     """
+    if not settings.CLOUD_PROCESSING_ENABLED:
+        logger.info("📧 Weekly Digest übersprungen (CLOUD_PROCESSING_ENABLED=false)")
+        return {"status": "disabled", "message": "Cloud-Verarbeitung deaktiviert (CLOUD_PROCESSING_ENABLED=false)"}
+
     if not settings.telegram_configured:
         return {"status": "error", "message": "Telegram nicht konfiguriert"}
 

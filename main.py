@@ -175,110 +175,119 @@ async def lifespan(app: FastAPI):
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
         scheduler = AsyncIOScheduler(timezone=ZoneInfo("Europe/Berlin"))
 
-        scheduler.add_job(
-            _refresh_data, "cron",
-            hour=16, minute=15,
-            day_of_week="mon-fri",
-            id="daily_analysis",
-        )
-        logger.info("\U0001f4ca Vollständige Analyse geplant um 16:15 CET (Mo-Fr)")
-
-        # Weekly Digest: Via Cloud Scheduler (POST /api/trigger-weekly-digest)
-        # APScheduler kann den Digest NICHT zuverlässig senden, weil:
-        # - Keep-Alive endet um 22:00 CET → Container stirbt
-        # - APScheduler-Job um 22:30 CET wird nie erreicht
-        # → Cloud Scheduler triggert den Endpoint direkt (funktioniert auch bei Cold Start)
-        logger.info("📧 Wöchentlicher Digest: Via Cloud Scheduler (Freitag 22:30 CET)")
-
-        # News-Kurator: Proaktive Portfolio-Alerts (alle 4h, Mo-Fr)
-        async def _run_news_kurator():
-            try:
-                from services.news_kurator import check_portfolio_news
-                await check_portfolio_news()
-            except Exception as e:
-                logger.debug(f"News-Kurator Check fehlgeschlagen: {e}")
-
-        scheduler.add_job(
-            _run_news_kurator, "cron",
-            hour="9,13,17,21",
-            day_of_week="mon-fri",
-            id="news_kurator",
-        )
-        logger.info("📡 News-Kurator geplant: Mo-Fr um 09, 13, 17, 21 Uhr CET")
-
-        # Market Monitor: Ad-hoc Event Alerts (alle 30 Min, Mo-Fr)
-        async def _run_market_monitor():
-            try:
-                from services.market_monitor import check_market_events
-                result = await check_market_events()
-                if result["alerts_sent"] > 0:
-                    logger.info(
-                        f"🚨 Market Monitor: {result['alerts_sent']} Alert(s) gesendet"
-                    )
-            except Exception as e:
-                logger.debug(f"Market Monitor Check fehlgeschlagen: {e}")
-
-        scheduler.add_job(
-            _run_market_monitor, "cron",
-            minute="5,35",
-            hour="9-22",
-            day_of_week="mon-fri",
-            id="market_monitor",
-        )
-        logger.info("🚨 Market Monitor geplant: Mo-Fr alle 30 Min (09-22 Uhr CET)")
-
-        # AI Finance Agent wird automatisch nach jeder Analyse in _do_refresh() getriggert
-        if settings.telegram_configured:
-            logger.info("🤖 AI Finance Agent: Wird nach Analyse automatisch getriggert (Telegram-Report)")
+        if not settings.CLOUD_PROCESSING_ENABLED:
+            logger.info(
+                "⏸️  Cloud-Verarbeitung DEAKTIVIERT (CLOUD_PROCESSING_ENABLED=false). "
+                "Scheduler-Jobs, Benachrichtigungen und Cloud-Trigger sind aus. "
+                "Telegram-Bot und Dashboard bleiben aktiv."
+            )
         else:
-            logger.info("🤖 AI Finance Agent übersprungen (Telegram nicht konfiguriert)")
-
-        # Shadow Portfolio Agent: Autonomer Zyklus taeglich Mo-Fr 17:00 CET
-        async def _run_shadow_agent():
-            try:
-                from services.shadow_agent import run_shadow_agent_cycle
-                result = await run_shadow_agent_cycle()
-                logger.info(
-                    f"🤖 Shadow Agent: Zyklus done — "
-                    f"{result.get('trades_executed', []).__len__()} Trades"
-                )
-            except Exception as e:
-                logger.warning(f"Shadow Agent Zyklus fehlgeschlagen: {e}")
-
-        if settings.gemini_configured:
             scheduler.add_job(
-                _run_shadow_agent, "cron",
-                hour=17, minute=0,
+                _refresh_data, "cron",
+                hour=16, minute=15,
                 day_of_week="mon-fri",
-                id="shadow_agent",
+                id="daily_analysis",
             )
-            logger.info("🤖 Shadow Portfolio Agent geplant: Mo-Fr 17:00 CET")
+            logger.info("\U0001f4ca Vollständige Analyse geplant um 16:15 CET (Mo-Fr)")
 
-        # Proaktiver Parqet Token-Refresh (alle 4h, Mo-Fr)
-        # Verhindert Token-Ablauf durch regelmäßige Erneuerung.
-        # Ohne diesen Job kann der Refresh-Token nach Tagen Inaktivität
-        # ungültig werden → keine Portfolio-Daten → keine Benachrichtigungen.
-        if settings.parqet_api_configured or settings.PARQET_PORTFOLIO_ID:
-            async def _proactive_token_refresh():
+            # Weekly Digest: Via Cloud Scheduler (POST /api/trigger-weekly-digest)
+            # APScheduler kann den Digest NICHT zuverlässig senden, weil:
+            # - Keep-Alive endet um 22:00 CET → Container stirbt
+            # - APScheduler-Job um 22:30 CET wird nie erreicht
+            # → Cloud Scheduler triggert den Endpoint direkt (funktioniert auch bei Cold Start)
+            logger.info("📧 Wöchentlicher Digest: Via Cloud Scheduler (Freitag 22:30 CET)")
+
+            # News-Kurator: Proaktive Portfolio-Alerts (alle 4h, Mo-Fr)
+            async def _run_news_kurator():
                 try:
-                    from fetchers.parqet_auth import ensure_valid_token
-                    token = await ensure_valid_token()
-                    if token:
-                        logger.info("🔑 Parqet Token proaktiv erneuert")
-                    else:
-                        logger.warning("🔑 Parqet Token-Refresh fehlgeschlagen")
+                    from services.news_kurator import check_portfolio_news
+                    await check_portfolio_news()
                 except Exception as e:
-                    logger.warning(f"Proaktiver Token-Refresh fehlgeschlagen: {e}")
+                    logger.debug(f"News-Kurator Check fehlgeschlagen: {e}")
 
             scheduler.add_job(
-                _proactive_token_refresh, "cron",
-                hour="6,10,14,18,22",
+                _run_news_kurator, "cron",
+                hour="9,13,17,21",
                 day_of_week="mon-fri",
-                id="parqet_token_refresh",
+                id="news_kurator",
             )
-            logger.info("🔑 Parqet Token-Refresh geplant: Mo-Fr alle 4h (06-22 Uhr CET)")
+            logger.info("📡 News-Kurator geplant: Mo-Fr um 09, 13, 17, 21 Uhr CET")
+
+            # Market Monitor: Ad-hoc Event Alerts (alle 30 Min, Mo-Fr)
+            async def _run_market_monitor():
+                try:
+                    from services.market_monitor import check_market_events
+                    result = await check_market_events()
+                    if result["alerts_sent"] > 0:
+                        logger.info(
+                            f"🚨 Market Monitor: {result['alerts_sent']} Alert(s) gesendet"
+                        )
+                except Exception as e:
+                    logger.debug(f"Market Monitor Check fehlgeschlagen: {e}")
+
+            scheduler.add_job(
+                _run_market_monitor, "cron",
+                minute="5,35",
+                hour="9-22",
+                day_of_week="mon-fri",
+                id="market_monitor",
+            )
+            logger.info("🚨 Market Monitor geplant: Mo-Fr alle 30 Min (09-22 Uhr CET)")
+
+            # AI Finance Agent wird automatisch nach jeder Analyse in _do_refresh() getriggert
+            if settings.telegram_configured:
+                logger.info("🤖 AI Finance Agent: Wird nach Analyse automatisch getriggert (Telegram-Report)")
+            else:
+                logger.info("🤖 AI Finance Agent übersprungen (Telegram nicht konfiguriert)")
+
+            # Shadow Portfolio Agent: Autonomer Zyklus taeglich Mo-Fr 17:00 CET
+            async def _run_shadow_agent():
+                try:
+                    from services.shadow_agent import run_shadow_agent_cycle
+                    result = await run_shadow_agent_cycle()
+                    logger.info(
+                        f"🤖 Shadow Agent: Zyklus done — "
+                        f"{result.get('trades_executed', []).__len__()} Trades"
+                    )
+                except Exception as e:
+                    logger.warning(f"Shadow Agent Zyklus fehlgeschlagen: {e}")
+
+            if settings.gemini_configured:
+                scheduler.add_job(
+                    _run_shadow_agent, "cron",
+                    hour=17, minute=0,
+                    day_of_week="mon-fri",
+                    id="shadow_agent",
+                )
+                logger.info("🤖 Shadow Portfolio Agent geplant: Mo-Fr 17:00 CET")
+
+            # Proaktiver Parqet Token-Refresh (alle 4h, Mo-Fr)
+            # Verhindert Token-Ablauf durch regelmäßige Erneuerung.
+            # Ohne diesen Job kann der Refresh-Token nach Tagen Inaktivität
+            # ungültig werden → keine Portfolio-Daten → keine Benachrichtigungen.
+            if settings.parqet_api_configured or settings.PARQET_PORTFOLIO_ID:
+                async def _proactive_token_refresh():
+                    try:
+                        from fetchers.parqet_auth import ensure_valid_token
+                        token = await ensure_valid_token()
+                        if token:
+                            logger.info("🔑 Parqet Token proaktiv erneuert")
+                        else:
+                            logger.warning("🔑 Parqet Token-Refresh fehlgeschlagen")
+                    except Exception as e:
+                        logger.warning(f"Proaktiver Token-Refresh fehlgeschlagen: {e}")
+
+                scheduler.add_job(
+                    _proactive_token_refresh, "cron",
+                    hour="6,10,14,18,22",
+                    day_of_week="mon-fri",
+                    id="parqet_token_refresh",
+                )
+                logger.info("🔑 Parqet Token-Refresh geplant: Mo-Fr alle 4h (06-22 Uhr CET)")
 
         # Telegram Webhook registrieren (wenn auf Cloud Run)
+        # Bleibt IMMER aktiv (auch wenn CLOUD_PROCESSING_ENABLED=false),
+        # damit der Telegram-Bot erreichbar bleibt.
         if settings.telegram_configured and settings.ENVIRONMENT == "production":
             async def _register_webhook():
                 """Registriert den Telegram-Webhook bei App-Start."""
@@ -311,60 +320,61 @@ async def lifespan(app: FastAPI):
                     logger.warning(f"Telegram-Webhook-Registrierung fehlgeschlagen: {e}")
             asyncio.create_task(_register_webhook())
 
-        # Intraday Kurs-Updates (alle 15min während Marktzeiten, 0 FMP-Calls)
-        # Nutzt die zentrale update_yfinance_prices() Funktion die:
-        # - EUR-Konvertierung korrekt durchführt
-        # - Daily Changes setzt
-        # - Summary-Totals aktualisiert
-        async def _intraday_price_update():
-            """Aktualisiert Kurse + Daily Changes via update_yfinance_prices()."""
-            try:
-                from services.portfolio_builder import update_yfinance_prices
-                result = await update_yfinance_prices()
-                if result.get("status") == "done":
-                    logger.info(
-                        f"📈 Intraday-Update: {result.get('prices_updated', 0)} Kurse, "
-                        f"{result.get('daily_changes', 0)} Daily Changes"
-                    )
-            except Exception as e:
-                logger.debug(f"Intraday-Update fehlgeschlagen: {e}")
+        if settings.CLOUD_PROCESSING_ENABLED:
+            # Intraday Kurs-Updates (alle 15min während Marktzeiten, 0 FMP-Calls)
+            # Nutzt die zentrale update_yfinance_prices() Funktion die:
+            # - EUR-Konvertierung korrekt durchführt
+            # - Daily Changes setzt
+            # - Summary-Totals aktualisiert
+            async def _intraday_price_update():
+                """Aktualisiert Kurse + Daily Changes via update_yfinance_prices()."""
+                try:
+                    from services.portfolio_builder import update_yfinance_prices
+                    result = await update_yfinance_prices()
+                    if result.get("status") == "done":
+                        logger.info(
+                            f"📈 Intraday-Update: {result.get('prices_updated', 0)} Kurse, "
+                            f"{result.get('daily_changes', 0)} Daily Changes"
+                        )
+                except Exception as e:
+                    logger.debug(f"Intraday-Update fehlgeschlagen: {e}")
 
-        scheduler.add_job(
-            _intraday_price_update, "cron",
-            minute=f"*/{settings.PRICE_UPDATE_INTERVAL_MIN}",
-            hour="8-22",  # Nur während Marktzeiten (CET)
-            day_of_week="mon-fri",  # Nur Werktage
-            id="intraday_prices",
-        )
-        logger.info(f"📈 Intraday Kurs-Updates alle {settings.PRICE_UPDATE_INTERVAL_MIN}min (Mo-Fr 08-22 Uhr)")
+            scheduler.add_job(
+                _intraday_price_update, "cron",
+                minute=f"*/{settings.PRICE_UPDATE_INTERVAL_MIN}",
+                hour="8-22",  # Nur während Marktzeiten (CET)
+                day_of_week="mon-fri",  # Nur Werktage
+                id="intraday_prices",
+            )
+            logger.info(f"📈 Intraday Kurs-Updates alle {settings.PRICE_UPDATE_INTERVAL_MIN}min (Mo-Fr 08-22 Uhr)")
 
-        # Portfolio History: Täglicher Snapshot der Wertentwicklung um 22:30 Uhr CET
-        async def _run_history_update():
-            try:
-                from services.portfolio_history import update_today
-                await update_today()
-            except Exception as e:
-                logger.warning(f"Portfolio-History-Update fehlgeschlagen: {e}")
+            # Portfolio History: Täglicher Snapshot der Wertentwicklung um 22:30 Uhr CET
+            async def _run_history_update():
+                try:
+                    from services.portfolio_history import update_today
+                    await update_today()
+                except Exception as e:
+                    logger.warning(f"Portfolio-History-Update fehlgeschlagen: {e}")
 
-        scheduler.add_job(
-            _run_history_update, "cron",
-            hour=22, minute=30,
-            id="portfolio_history_update",
-        )
-        logger.info("📸 Portfolio-History-Update geplant: Täglich 22:30 CET")
+            scheduler.add_job(
+                _run_history_update, "cron",
+                hour=22, minute=30,
+                id="portfolio_history_update",
+            )
+            logger.info("📸 Portfolio-History-Update geplant: Täglich 22:30 CET")
 
-        # Portfolio History: Init / Auto-Backfill im Hintergrund
-        async def _init_portfolio_history():
-            try:
-                from services.portfolio_history import load_history, backfill_from_parqet
-                history = load_history()
-                if not history.get("daily"):
-                    logger.info("📊 Portfolio History ist leer. Starte automatischen Backfill...")
-                    await backfill_from_parqet()
-            except Exception as e:
-                logger.warning(f"Portfolio History Init fehlgeschlagen: {e}")
+            # Portfolio History: Init / Auto-Backfill im Hintergrund
+            async def _init_portfolio_history():
+                try:
+                    from services.portfolio_history import load_history, backfill_from_parqet
+                    history = load_history()
+                    if not history.get("daily"):
+                        logger.info("📊 Portfolio History ist leer. Starte automatischen Backfill...")
+                        await backfill_from_parqet()
+                except Exception as e:
+                    logger.warning(f"Portfolio History Init fehlgeschlagen: {e}")
 
-        asyncio.create_task(_init_portfolio_history())
+            asyncio.create_task(_init_portfolio_history())
 
         scheduler.start()
     except Exception as e:

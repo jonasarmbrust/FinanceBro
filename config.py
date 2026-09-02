@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     DAILY_REFRESH_TIME: str = "06:00"
     PRICE_UPDATE_INTERVAL_MIN: int = 15
 
+    # Cloud-Verarbeitung (Scheduler-Jobs, Cloud-Trigger, Benachrichtigungen)
+    # Auf False setzen um alle automatischen Jobs zu deaktivieren.
+    # Telegram-Bot-Kommandos und Dashboard bleiben weiterhin aktiv.
+    CLOUD_PROCESSING_ENABLED: bool = True
+
     # Telegram Bot
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
